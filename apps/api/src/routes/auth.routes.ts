@@ -13,7 +13,33 @@ const CreateApiKeySchema = z.object({
 
 export const authRouter = Router();
 
-// Generate a new secure API Key for a project
+// 1. GET /api/auth/keys?projectId=... - List all API keys for a project
+authRouter.get("/keys", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projectId = req.query.projectId as string;
+    if (!projectId) {
+      return res.status(400).json({ success: false, error: { message: "projectId query param is required" } });
+    }
+
+    const keys = await prisma.apiKey.findMany({
+      where: { projectId },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ success: true, data: keys });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 2. POST /api/auth/keys - Generate a new secure API Key
 authRouter.post(
   "/keys",
   validate(CreateApiKeySchema),
@@ -21,7 +47,6 @@ authRouter.post(
     try {
       const { projectId, name, expiresInDays } = req.body;
 
-      // 1. Check if project exists
       const project = await prisma.project.findUnique({
         where: { id: projectId },
       });
@@ -33,10 +58,9 @@ authRouter.post(
         });
       }
 
-      // 2. Generate cryptographically random key: `djs_live_<random_bytes>`
       const rawSecret = randomBytes(24).toString("hex");
       const apiKey = `djs_live_${rawSecret}`;
-      const prefix = apiKey.slice(0, 12); // "djs_live_xxxx"
+      const prefix = apiKey.slice(0, 12);
       const keyHash = createHash("sha256").update(apiKey).digest("hex");
 
       let expiresAt: Date | null = null;
@@ -48,7 +72,7 @@ authRouter.post(
         data: {
           projectId,
           name,
-          prefix, // matches Prisma schema column 'prefix'
+          prefix,
           keyHash,
           expiresAt,
         },
@@ -60,7 +84,7 @@ authRouter.post(
           id: createdKey.id,
           name: createdKey.name,
           prefix: createdKey.prefix,
-          apiKey, // Raw token returned ONLY once upon creation
+          apiKey, // Returned ONCE upon generation
           expiresAt: createdKey.expiresAt,
         },
       });
@@ -69,3 +93,14 @@ authRouter.post(
     }
   }
 );
+
+// 3. DELETE /api/auth/keys/:id - Revoke an API Key
+authRouter.delete("/keys/:id", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    await prisma.apiKey.delete({ where: { id } });
+    res.json({ success: true, message: "API Key revoked successfully" });
+  } catch (error) {
+    next(error);
+  }
+});

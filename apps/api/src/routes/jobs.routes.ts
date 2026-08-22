@@ -1,3 +1,4 @@
+// apps/api/src/routes/jobs.routes.ts
 import { Router } from "express";
 import { prisma, JobStatus, Prisma } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
@@ -5,10 +6,60 @@ import { CreateJobSchema, CreateBatchJobSchema } from "../schemas/job.schema";
 
 const router = Router();
 
+// ============================================================================
+// GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
+// ============================================================================
+// GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
+router.get("/", async (req, res, next) => {
+  try {
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    const queueName = typeof req.query.queueName === "string" ? req.query.queueName : undefined;
+    const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
+    const limitParam = typeof req.query.limit === "string" ? req.query.limit : undefined;
+
+    const whereClause: Prisma.JobWhereInput = {};
+
+    // Filter by Project or Queue Name via Queue relation
+    if (projectId || (queueName && queueName !== "ALL")) {
+      whereClause.queue = {
+        ...(projectId ? { projectId } : {}),
+        ...(queueName && queueName !== "ALL" ? { name: queueName } : {}),
+      };
+    }
+
+    // Filter by Job Status
+    if (statusParam && statusParam !== "ALL" && Object.values(JobStatus).includes(statusParam as JobStatus)) {
+      whereClause.status = statusParam as JobStatus;
+    }
+
+    const takeLimit = Math.min(Number(limitParam) || 50, 200);
+
+    const jobs = await prisma.job.findMany({
+      where: whereClause,
+      include: {
+        queue: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: takeLimit,
+    });
+
+    res.json({
+      success: true,
+      data: jobs,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+// ============================================================================
 // POST /api/jobs - Ingest single job (immediate or scheduled)
+// ============================================================================
 router.post("/", validate(CreateJobSchema), async (req, res, next) => {
   try {
     const {
+      name,
       queueName,
       payload,
       priority,
@@ -39,6 +90,7 @@ router.post("/", validate(CreateJobSchema), async (req, res, next) => {
       const created = await tx.job.create({
         data: {
           queueId: queue.id,
+          name:name??(payload?.action || payload?.task || "standard_task"),
           payload: payload as Prisma.InputJsonValue,
           priority,
           runAt: scheduledRunAt,
@@ -47,6 +99,9 @@ router.post("/", validate(CreateJobSchema), async (req, res, next) => {
           backoffType,
           backoffDelayMs,
           status: JobStatus.QUEUED,
+        },
+        include: {
+          queue: { select: { id: true, name: true } },
         },
       });
 
@@ -69,7 +124,9 @@ router.post("/", validate(CreateJobSchema), async (req, res, next) => {
   }
 });
 
+// ============================================================================
 // POST /api/jobs/batch - Atomic batch job ingestion
+// ============================================================================
 router.post("/batch", validate(CreateBatchJobSchema), async (req, res, next) => {
   try {
     const { name, onCompleteUrl, jobs } = req.body;
@@ -122,7 +179,9 @@ router.post("/batch", validate(CreateBatchJobSchema), async (req, res, next) => 
   }
 });
 
+// ============================================================================
 // GET /api/jobs/:id - Inspect a single job and its execution history
+// ============================================================================
 router.get("/:id", async (req, res, next) => {
   try {
     const job = await prisma.job.findUnique({
@@ -145,7 +204,9 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
+// ============================================================================
 // POST /api/jobs/:id/cancel - Cancel a pending job
+// ============================================================================
 router.post("/:id/cancel", async (req, res, next) => {
   try {
     const job = await prisma.job.updateMany({
