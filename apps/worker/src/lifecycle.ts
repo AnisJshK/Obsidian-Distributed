@@ -2,6 +2,11 @@ import { prisma, JobStatus, Prisma } from "@scheduler/database";
 import { calculateBackoff } from "./retry";
 import { DagDependencyEngine } from "./dag";
 
+const TX_OPTIONS = {
+  maxWait: 10000, // Maximum time to acquire a connection from the pool (10s)
+  timeout: 20000, // Maximum execution time before transaction expires (20s)
+};
+
 export async function markJobRunning(jobId: string): Promise<void> {
   await prisma.job.update({
     where: { id: jobId },
@@ -22,33 +27,36 @@ export async function markJobCompleted(
 ): Promise<void> {
   const now = new Date();
 
-  await prisma.$transaction(async (tx) => {
-    await tx.job.update({
-      where: { id: jobId },
-      data: {
-        status: JobStatus.COMPLETED,
-        finishedAt: now,
-        result: result ? (result as Prisma.InputJsonValue) : Prisma.JsonNull,
-        errorDetails: null,
-      },
-    });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.job.update({
+        where: { id: jobId },
+        data: {
+          status: JobStatus.COMPLETED,
+          finishedAt: now,
+          result: result ? (result as Prisma.InputJsonValue) : Prisma.JsonNull,
+          errorDetails: null,
+        },
+      });
 
-    await tx.jobExecution.create({
-      data: {
-        jobId,
-        workerId,
-        attempt,
-        status: JobStatus.COMPLETED,
-        durationMs,
-        logs: logs ?? null,
-      },
-    });
+      await tx.jobExecution.create({
+        data: {
+          jobId,
+          workerId,
+          attempt,
+          status: JobStatus.COMPLETED,
+          durationMs,
+          logs: logs ?? null,
+        },
+      });
 
-    await tx.worker.update({
-      where: { id: workerId },
-      data: { activeJobs: { decrement: 1 } },
-    });
-  });
+      await tx.worker.update({
+        where: { id: workerId },
+        data: { activeJobs: { decrement: 1 } },
+      });
+    },
+    TX_OPTIONS
+  );
 
   // Resolve dependent child tasks in the workflow
   await DagDependencyEngine.onJobCompleted(jobId);
@@ -66,76 +74,81 @@ export async function markJobFailed(
   const errorMessage = error.message || "Unknown execution error";
   const stackTrace = error.stack || null;
 
-  const job = await prisma.job.findUnique({
-    where: { id: jobId },
-  });
+  let isDLQ = false;
 
-  if (!job) return;
-
-  const nextRetry = job.retryCount + 1;
-  const isDLQ = nextRetry > job.maxRetries;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.jobExecution.create({
-      data: {
-        jobId,
-        workerId,
-        attempt,
-        status: isDLQ ? JobStatus.DLQ : JobStatus.FAILED,
-        durationMs,
-        error: errorMessage,
-        logs: logs ?? null,
-      },
-    });
-
-    if (isDLQ) {
-      await tx.job.update({
+  await prisma.$transaction(
+    async (tx) => {
+      const job = await tx.job.findUnique({
         where: { id: jobId },
-        data: {
-          status: JobStatus.DLQ,
-          finishedAt: now,
-          errorDetails: errorMessage,
-        },
       });
 
-      await tx.dlqEntry.upsert({
-        where: { jobId },
-        update: {
-          failedReason: errorMessage,
-          stackTrace,
-        },
-        create: {
+      if (!job) return;
+
+      const nextRetry = job.retryCount + 1;
+      isDLQ = nextRetry > job.maxRetries;
+
+      await tx.jobExecution.create({
+        data: {
           jobId,
-          failedReason: errorMessage,
-          stackTrace,
+          workerId,
+          attempt,
+          status: isDLQ ? JobStatus.DLQ : JobStatus.FAILED,
+          durationMs,
+          error: errorMessage,
+          logs: logs ?? null,
         },
       });
-    } else {
-      const delayMs = calculateBackoff(
-        job.backoffType,
-        job.backoffDelayMs,
-        nextRetry
-      );
-      const nextRunAt = new Date(Date.now() + delayMs);
 
-      await tx.job.update({
-        where: { id: jobId },
-        data: {
-          status: JobStatus.QUEUED,
-          retryCount: nextRetry,
-          runAt: nextRunAt,
-          claimedById: null,
-          claimedAt: null,
-          errorDetails: `Attempt ${attempt} failed: ${errorMessage}`,
-        },
+      if (isDLQ) {
+        await tx.job.update({
+          where: { id: jobId },
+          data: {
+            status: JobStatus.DLQ,
+            finishedAt: now,
+            errorDetails: errorMessage,
+          },
+        });
+
+        await tx.dlqEntry.upsert({
+          where: { jobId },
+          update: {
+            failedReason: errorMessage,
+            stackTrace,
+          },
+          create: {
+            jobId,
+            failedReason: errorMessage,
+            stackTrace,
+          },
+        });
+      } else {
+        const delayMs = calculateBackoff(
+          job.backoffType,
+          job.backoffDelayMs,
+          nextRetry
+        );
+        const nextRunAt = new Date(Date.now() + delayMs);
+
+        await tx.job.update({
+          where: { id: jobId },
+          data: {
+            status: JobStatus.QUEUED,
+            retryCount: nextRetry,
+            runAt: nextRunAt,
+            claimedById: null,
+            claimedAt: null,
+            errorDetails: `Attempt ${attempt} failed: ${errorMessage}`,
+          },
+        });
+      }
+
+      await tx.worker.update({
+        where: { id: workerId },
+        data: { activeJobs: { decrement: 1 } },
       });
-    }
-
-    await tx.worker.update({
-      where: { id: workerId },
-      data: { activeJobs: { decrement: 1 } },
-    });
-  });
+    },
+    TX_OPTIONS
+  );
 
   // If permanent failure / DLQ, cascade cancellation down the workflow DAG
   if (isDLQ) {

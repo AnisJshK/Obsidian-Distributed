@@ -12,13 +12,14 @@ import {
   Terminal, 
   CheckCircle2, 
   AlertTriangle,
-  ExternalLink
+  ExternalLink,
+  LogOut
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, logout } = useAuth() as any;
   const projectId = session?.projectId || "";
 
   // State Management
@@ -49,6 +50,16 @@ export const Navbar: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedKey(true);
     setTimeout(() => setCopiedKey(false), 2000);
+  };
+
+  const handleLogout = () => {
+    setShowProjectPopover(false);
+    if (typeof logout === "function") {
+      logout();
+    } else {
+      localStorage.clear();
+      window.location.href = "/";
+    }
   };
 
   const getWorkerSnippet = () => {
@@ -191,16 +202,26 @@ export const Navbar: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setShowProjectPopover(false);
-                    navigate("/settings");
-                  }}
-                  className="w-full mt-1 bg-[#10192e] hover:bg-[#16233f] text-blue-400 text-xs font-semibold py-2 rounded-lg border border-blue-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  Manage API Keys & Config
-                  <ExternalLink className="w-3 h-3" />
-                </button>
+                <div className="space-y-2 pt-1 border-t border-[#151e30]">
+                  <button
+                    onClick={() => {
+                      setShowProjectPopover(false);
+                      navigate("/settings");
+                    }}
+                    className="w-full bg-[#10192e] hover:bg-[#16233f] text-blue-400 text-xs font-semibold py-2 rounded-lg border border-blue-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    Manage API Keys & Config
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+
+                  <button
+                    onClick={handleLogout}
+                    className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs font-semibold py-2 rounded-lg border border-red-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Sign Out / Switch Context
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -7,6 +7,11 @@ import CronExpressionParser from "cron-parser";
 
 export const schedulesRouter = Router();
 
+// Helper to extract the authenticated project ID from auth middleware
+function getAuthenticatedProjectId(req: Request): string | null {
+  return (req as any).project?.id || (req as any).apiKey?.projectId || (req as any).user?.projectId || null;
+}
+
 // ----------------------------------------------------
 // 1. Create a Recurring Schedule
 // ----------------------------------------------------
@@ -16,6 +21,31 @@ schedulesRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body;
+      const authenticatedProjectId = getAuthenticatedProjectId(req);
+
+      // Authorization check: If auth context exists, ensure tenant cannot create schedules for other projects
+      if (authenticatedProjectId && body.projectId && body.projectId !== authenticatedProjectId) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: "FORBIDDEN",
+            message: "You are not authorized to create schedules for this project.",
+          },
+        });
+      }
+
+      // Enforce the project context
+      const targetProjectId = authenticatedProjectId || body.projectId;
+      if (!targetProjectId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "MISSING_PROJECT_ID",
+            message: "Project ID is required.",
+          },
+        });
+      }
+
       let initialNextRun: Date;
       const now = new Date();
 
@@ -49,11 +79,11 @@ schedulesRouter.post(
         initialNextRun = new Date(now.getTime() + intervalMs);
       }
 
-      // Resolve Queue within project
+      // Resolve Queue within the verified project
       const queue = await prisma.queue.findFirst({
         where: {
           name: body.queueName,
-          projectId: body.projectId,
+          projectId: targetProjectId,
         },
       });
 
@@ -62,14 +92,14 @@ schedulesRouter.post(
           success: false,
           error: {
             code: "NOT_FOUND",
-            message: `Queue "${body.queueName}" does not exist in project "${body.projectId}".`,
+            message: `Queue "${body.queueName}" does not exist in project "${targetProjectId}".`,
           },
         });
       }
 
       const schedule = await prisma.recurringSchedule.create({
         data: {
-          projectId: body.projectId,
+          projectId: targetProjectId,
           queueId: queue.id,
           name: body.name,
           type: body.type as ScheduleType,
@@ -82,7 +112,7 @@ schedulesRouter.post(
         },
       });
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         data: schedule,
       });
@@ -97,11 +127,25 @@ schedulesRouter.post(
 // ----------------------------------------------------
 schedulesRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = req.query.projectId as string;
+    const authenticatedProjectId = getAuthenticatedProjectId(req);
+    const queryProjectId = req.query.projectId as string;
+
+    // Reject cross-tenant read attempts if authenticated
+    if (authenticatedProjectId && queryProjectId && queryProjectId !== authenticatedProjectId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "FORBIDDEN",
+          message: "You are not authorized to view schedules for this project.",
+        },
+      });
+    }
+
+    const projectId = authenticatedProjectId || queryProjectId;
     if (!projectId) {
       return res.status(400).json({
         success: false,
-        error: { code: "MISSING_PARAM", message: "projectId query param is required." },
+        error: { code: "MISSING_PARAM", message: "projectId is required." },
       });
     }
 
@@ -111,7 +155,7 @@ schedulesRouter.get("/", async (req: Request, res: Response, next: NextFunction)
       orderBy: { createdAt: "desc" },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: schedules,
     });
