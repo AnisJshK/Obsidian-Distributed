@@ -1,5 +1,6 @@
 import type { ClaimedJob } from "./poller";
 import { markJobRunning, markJobCompleted, markJobFailed } from "./lifecycle";
+import { runTask } from "./tasks";
 
 async function executeTaskPayload(
   payload: Record<string, unknown>,
@@ -9,17 +10,12 @@ async function executeTaskPayload(
     throw new Error("Job execution aborted due to timeout");
   }
 
-  // Simulated worker processing task with abort listener
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, 300);
-
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(new Error("Job execution aborted due to timeout"));
-    });
-  });
-
-  return { processed: true, completedAt: new Date().toISOString() };
+  return Promise.race([
+    runTask(payload),
+    new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("Job execution aborted due to timeout")));
+    }),
+  ]);
 }
 
 export async function executeJob(

@@ -3,33 +3,62 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { 
-  Plus, 
-  RotateCw 
-} from "lucide-react";
+import { Plus, RotateCw, X, AlertCircle, Loader2 } from "lucide-react";
 import { formatTimeAgo } from "../lib/utils";
 
 interface ScheduleItem {
   id: string;
   name: string;
   queue: { id: string; name: string };
-  cronExpression: string;
+  type: "CRON" | "INTERVAL";
+  expression: string;
+  timezone: string;
   isActive: boolean;
   nextRunAt: string;
   lastRunAt: string | null;
+  priority: number;
   payload: Record<string, unknown>;
 }
+
+interface QueueOption {
+  id: string;
+  name: string;
+}
+
+const CRON_PRESETS = [
+  { label: "Every minute", value: "* * * * *" },
+  { label: "Every 5 minutes", value: "*/5 * * * *" },
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Daily at midnight", value: "0 0 * * *" },
+];
 
 export const SchedulesPage: React.FC = () => {
   const { session } = useAuth();
   const projectId = session?.projectId;
   const queryClient = useQueryClient();
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
-  const [queueName, setQueueName] = useState("default");
-  const [cronExpression, setCronExpression] = useState("*/5 * * * *");
+  const [queueName, setQueueName] = useState("");
+  const [type, setType] = useState<"CRON" | "INTERVAL">("CRON");
+  const [expression, setExpression] = useState("*/5 * * * *");
+  const [intervalSeconds, setIntervalSeconds] = useState(60);
+  const [timezone, setTimezone] = useState("UTC");
+  const [priority, setPriority] = useState(5);
+  const [payloadText, setPayloadText] = useState('{\n  "task": ""\n}');
+  const [payloadError, setPayloadError] = useState<string | null>(null);
 
-  // 1. Fetch live recurring schedules
+  // Fetch queues for the dropdown (same pattern as JobsPage)
+  const { data: queues = [] } = useQuery<QueueOption[]>({
+    queryKey: ["queues-list", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const res = await api.get(`/queues?projectId=${projectId}`);
+      return res.data?.data || [];
+    },
+  });
+
+  // Fetch live recurring schedules
   const { data: schedules = [], isLoading, isFetching, refetch } = useQuery<ScheduleItem[]>({
     queryKey: ["schedules", projectId],
     enabled: !!projectId,
@@ -40,23 +69,51 @@ export const SchedulesPage: React.FC = () => {
     refetchInterval: 5000,
   });
 
-  // 2. Create Schedule Mutation
+  const resetForm = () => {
+    setName("");
+    setQueueName(queues[0]?.name || "");
+    setType("CRON");
+    setExpression("*/5 * * * *");
+    setIntervalSeconds(60);
+    setTimezone("UTC");
+    setPriority(5);
+    setPayloadText('{\n  "task": ""\n}');
+    setPayloadError(null);
+  };
+
   const createScheduleMutation = useMutation({
-    mutationFn: async () => {
-      await api.post("/schedules", {
-        projectId,
-        name,
-        queueName,
-        cronExpression,
-        payload: { automated: true, triggeredBy: "cron-engine" },
-      });
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await api.post("/schedules", body);
+      return res.data;
     },
     onSuccess: () => {
       setShowAddModal(false);
-      setName("");
+      resetForm();
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
     },
   });
+
+  const handleSubmit = () => {
+    let payload: Record<string, unknown>;
+    try {
+      payload = payloadText.trim() ? JSON.parse(payloadText) : {};
+      setPayloadError(null);
+    } catch {
+      setPayloadError("Payload must be valid JSON.");
+      return;
+    }
+
+    createScheduleMutation.mutate({
+      projectId,
+      queueName,
+      name,
+      type,
+      expression: type === "CRON" ? expression : String(intervalSeconds * 1000),
+      timezone: type === "CRON" ? timezone : undefined,
+      payload,
+      priority,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -77,7 +134,10 @@ export const SchedulesPage: React.FC = () => {
             Refresh
           </button>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-lg shadow-blue-600/20"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -94,6 +154,7 @@ export const SchedulesPage: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Schedule Name</th>
                 <th className="px-4 py-3">Queue</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Expression</th>
                 <th className="px-4 py-3">Next Run</th>
                 <th className="px-4 py-3">Last Run</th>
@@ -103,33 +164,46 @@ export const SchedulesPage: React.FC = () => {
             <tbody className="divide-y divide-[#151e30]">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">Loading schedules...</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">Loading schedules...</td>
                 </tr>
               ) : schedules.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                     No recurring schedules registered. Click "New Schedule" to create one.
                   </td>
                 </tr>
               ) : (
                 schedules.map((item) => (
-                  <tr key={item.id} className="hover:bg-[#0e162a] transition font-mono">
+                  <tr key={item.id} className="hover:bg-[#0e162a] transition">
                     <td className="px-4 py-3.5 font-sans font-semibold text-white">{item.name}</td>
-                    <td className="px-4 py-3.5 text-blue-400">{item.queue?.name || "default"}</td>
+                    <td className="px-4 py-3.5 text-blue-400 font-mono">{item.queue?.name || "default"}</td>
                     <td className="px-4 py-3.5">
-                      <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[11px]">
-                        {item.cronExpression}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                        item.type === "CRON"
+                          ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                          : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                      }`}>
+                        {item.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-300">
+                    <td className="px-4 py-3.5 font-mono">
+                      <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[11px]">
+                        {item.type === "INTERVAL" ? `every ${Number(item.expression) / 1000}s` : item.expression}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-300 font-mono">
                       {new Date(item.nextRunAt).toISOString().replace("T", " ").slice(0, 19)}
                     </td>
-                    <td className="px-4 py-3.5 text-slate-500">
+                    <td className="px-4 py-3.5 text-slate-500 font-mono">
                       {item.lastRunAt ? formatTimeAgo(item.lastRunAt) : "Never"}
                     </td>
                     <td className="px-4 py-3.5 text-right">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        ACTIVE
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
+                        item.isActive
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : "bg-slate-500/10 text-slate-400 border-slate-500/20"
+                      }`}>
+                        {item.isActive ? "ACTIVE" : "PAUSED"}
                       </span>
                     </td>
                   </tr>
@@ -152,7 +226,7 @@ export const SchedulesPage: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="flex justify-between text-slate-400">
               <span>Active Schedules</span>
-              <strong className="text-white font-mono">{schedules.length}</strong>
+              <strong className="text-white font-mono">{schedules.filter((s) => s.isActive).length}</strong>
             </div>
             <div className="flex justify-between text-slate-400">
               <span>Lock Mechanism</span>
@@ -160,7 +234,7 @@ export const SchedulesPage: React.FC = () => {
             </div>
             <div className="flex justify-between text-slate-400">
               <span>Schedule Precision</span>
-              <strong className="text-white font-mono">1,000ms tick</strong>
+              <strong className="text-white font-mono">5,000ms tick</strong>
             </div>
           </div>
         </div>
@@ -169,8 +243,14 @@ export const SchedulesPage: React.FC = () => {
       {/* Modal: New Schedule */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-md bg-[#0b1120] border border-[#162033] rounded-2xl p-6 shadow-2xl space-y-4">
-            <h2 className="text-base font-bold text-white font-sans">Register Recurring Schedule</h2>
+          <div className="w-full max-w-md bg-[#0b1120] border border-[#162033] rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white font-sans">Register Recurring Schedule</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-500 hover:text-slate-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
             <div>
               <label className="block text-xs text-slate-400 mb-1">Schedule Name</label>
               <input
@@ -181,25 +261,125 @@ export const SchedulesPage: React.FC = () => {
                 className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
               />
             </div>
+
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Queue Name</label>
-              <input
-                type="text"
+              <label className="block text-xs text-slate-400 mb-1">Queue</label>
+              <select
                 value={queueName}
                 onChange={(e) => setQueueName(e.target.value)}
                 className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-              />
+              >
+                {queues.length === 0 && <option value="">No queues available</option>}
+                {queues.map((q) => (
+                  <option key={q.id} value={q.name}>{q.name}</option>
+                ))}
+              </select>
             </div>
+
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Cron Expression (e.g. */5 * * * *)</label>
-              <input
-                type="text"
-                value={cronExpression}
-                onChange={(e) => setCronExpression(e.target.value)}
-                className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-blue-500"
-              />
+              <label className="block text-xs text-slate-400 mb-1">Type</label>
+              <div className="flex items-center bg-[#070b14] p-1 rounded-lg border border-[#151e30] text-xs">
+                {(["CRON", "INTERVAL"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setType(t)}
+                    className={`flex-1 px-3 py-1.5 rounded-md font-medium transition ${
+                      type === t
+                        ? "bg-[#10192e] text-blue-400 border border-blue-500/20"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+
+            {type === "CRON" ? (
+              <>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Cron Expression</label>
+                  <input
+                    type="text"
+                    value={expression}
+                    onChange={(e) => setExpression(e.target.value)}
+                    placeholder="*/5 * * * *"
+                    className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {CRON_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        onClick={() => setExpression(preset.value)}
+                        className="text-[10px] px-2 py-1 rounded-md bg-[#070b14] border border-[#151e30] text-slate-400 hover:text-blue-400 hover:border-blue-500/30 transition"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Timezone</label>
+                  <input
+                    type="text"
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    placeholder="UTC"
+                    className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Interval (seconds)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={intervalSeconds}
+                  onChange={(e) => setIntervalSeconds(Number(e.target.value))}
+                  className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-[10px] text-slate-600 mt-1">Sent to the API as milliseconds (min 1000ms).</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Priority (1-20)</label>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">{priority}</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Payload (JSON)</label>
+              <textarea
+                value={payloadText}
+                onChange={(e) => setPayloadText(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+              />
+              {payloadError && (
+                <p className="text-[11px] text-red-400 flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3" /> {payloadError}
+                </p>
+              )}
+            </div>
+
+            {createScheduleMutation.isError && (
+              <p className="text-[11px] text-red-400 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {(createScheduleMutation.error as any)?.response?.data?.error?.message || "Failed to create schedule."}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#151e30]">
               <button
                 onClick={() => setShowAddModal(false)}
                 className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
@@ -207,10 +387,11 @@ export const SchedulesPage: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={() => createScheduleMutation.mutate()}
-                disabled={!name.trim()}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50"
+                onClick={handleSubmit}
+                disabled={!name.trim() || !queueName || createScheduleMutation.isPending}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition"
               >
+                {createScheduleMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Create Schedule
               </button>
             </div>

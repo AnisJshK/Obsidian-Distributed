@@ -5,13 +5,13 @@ import { validate } from "../middleware/validate.middleware";
 import { CreateJobSchema, CreateBatchJobSchema } from "../schemas/job.schema";
 import { AuthenticatedRequest } from "../middleware/auth.middleware";
 
-const router = Router();
+const jobsRouter = Router();
 
 // ============================================================================
 // GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
 // ============================================================================
 // GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
-router.get("/", async (req: AuthenticatedRequest, res, next) => {
+jobsRouter.get("/", async (req: AuthenticatedRequest, res, next) => {
   try {
     const queueName = typeof req.query.queueName === "string" ? req.query.queueName : undefined;
     const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
@@ -58,7 +58,7 @@ router.get("/", async (req: AuthenticatedRequest, res, next) => {
 // ============================================================================
 // POST /api/jobs - Ingest single job (immediate or scheduled)
 // ============================================================================
-router.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest, res, next) => {
+jobsRouter.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest, res, next) => {
   try {
     const {
       name,
@@ -128,7 +128,7 @@ router.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest, re
 // ============================================================================
 // POST /api/jobs/batch - Atomic batch job ingestion
 // ============================================================================
-router.post("/batch", validate(CreateBatchJobSchema), async (req, res, next) => {
+jobsRouter.post("/batch", validate(CreateBatchJobSchema), async (req, res, next) => {
   try {
     const { name, onCompleteUrl, jobs } = req.body;
     const defaultProject = await prisma.project.findFirst();
@@ -183,7 +183,7 @@ router.post("/batch", validate(CreateBatchJobSchema), async (req, res, next) => 
 // ============================================================================
 // GET /api/jobs/:id - Inspect a single job and its execution history
 // ============================================================================
-router.get("/:id", async (req, res, next) => {
+jobsRouter.get("/:id", async (req, res, next) => {
   try {
     const job = await prisma.job.findUnique({
       where: { id: req.params.id },
@@ -208,7 +208,7 @@ router.get("/:id", async (req, res, next) => {
 // ============================================================================
 // POST /api/jobs/:id/cancel - Cancel a pending job
 // ============================================================================
-router.post("/:id/cancel", async (req, res, next) => {
+jobsRouter.post("/:id/cancel", async (req, res, next) => {
   try {
     const job = await prisma.job.updateMany({
       where: {
@@ -231,4 +231,4 @@ router.post("/:id/cancel", async (req, res, next) => {
   }
 });
 
-export default router;
+export default jobsRouter;

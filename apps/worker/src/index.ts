@@ -5,6 +5,7 @@ import { claimNextJobs } from "./poller";
 import { executeJob } from "./executor";
 import { HeartbeatManager } from "./heartbeat";
 import { DeadWorkerReaper } from "./reaper";
+import { RecurringScheduleEvaluator } from "./cron";
 
 const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || "5", 10);
 const POLL_INTERVAL_MS = 1000;
@@ -32,6 +33,9 @@ async function bootstrap() {
 
   const reaper = new DeadWorkerReaper();
   reaper.start();
+
+   const cronEvaluator = new RecurringScheduleEvaluator(); // ADD THIS
+  cronEvaluator.start();   
 
   const shutdown = async (signal: string) => {
     if (isShuttingDown) return;

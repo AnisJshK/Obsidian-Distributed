@@ -12,9 +12,10 @@ import {
   Check, 
   Clock, 
   AlertCircle,
-  Layers
+  Layers,
+  Plus
 } from "lucide-react";
-
+import { NewJobModal } from "../components/NewJobModal";
 import { resolveJobName } from "../lib/utils";
 
 interface JobItem {
@@ -47,6 +48,7 @@ export const JobsPage: React.FC = () => {
   const [selectedQueue, setSelectedQueue] = useState<string>("ALL");
   const [selectedJob, setSelectedJob] = useState<JobItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isNewJobOpen, setIsNewJobOpen] = useState(false);
 
   // 1. Fetch available queues for filter dropdown
   const { data: queues = [] } = useQuery<{ id: string; name: string }[]>({
@@ -151,6 +153,13 @@ export const JobsPage: React.FC = () => {
             Live stream of scheduled, queued, running, and completed jobs across all queues.
           </p>
         </div>
+        <button
+    onClick={() => setIsNewJobOpen(true)}
+    className="flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+  >
+    <Plus className="w-3.5 h-3.5" />
+    New Job
+  </button>
         <button
           onClick={() => refetch()}
           className="flex items-center gap-2 bg-[#0d1527] border border-[#1a253c] hover:border-slate-600 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
@@ -308,6 +317,11 @@ export const JobsPage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      // at the bottom, alongside the slide-over inspection panel
+{isNewJobOpen && (
+  <NewJobModal queues={queues} onClose={() => setIsNewJobOpen(false)} />
+)}
 
       {/* Slide-over Inspection Panel */}
       {selectedJob && (
