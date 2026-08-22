@@ -1,0 +1,17 @@
+{
+  "name": "distributed-job-scheduler-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "db:migrate": "bun --filter @scheduler/database migrate",
+    "db:generate": "bun --filter @scheduler/database generate",
+    "db:seed": "bun --filter @scheduler/database seed",
+    "dev:api": "bun --filter @scheduler/api dev",
+    "dev:worker": "bun --filter @scheduler/worker dev",
+    "dev:ws": "bun --filter @scheduler/ws dev",
+    "dev:client": "bun --filter @scheduler/client dev"
+  }
+}

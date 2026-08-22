@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum JobStatus {
+  QUEUED
+  CLAIMED
+  RUNNING
+  COMPLETED
+  FAILED
+  DLQ
+  CANCELLED
+}
+
+enum BackoffType {
+  FIXED
+  LINEAR
+  EXPONENTIAL
+}
+
+enum WorkerStatus {
+  ACTIVE
+  STALLED
+  DRAINING
+  TERMINATED
+}
+
+enum ScheduleType {
+  CRON
+  INTERVAL
+}
+
+// ----------------------------------------------------
+// 1. AUTHENTICATION & MULTI-TENANCY
+// ----------------------------------------------------
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(OPERATOR)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  projects     Project[]
+
+  @@index([email])
+}
+
+model Project {
+  id          String              @id @default(uuid())
+  name        String
+  slug        String              @unique
+  description String?
+  ownerId     String
+  owner       User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  apiKeys     ApiKey[]
+  queues      Queue[]
+  schedules   RecurringSchedule[]
+  batches     JobBatch[]
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  keyHash     String    @unique
+  name        String
+  prefix      String    // e.g. "sk_live_..."
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([keyHash])
+  @@index([projectId])
+}
+
+// ----------------------------------------------------
+// 2. QUEUES & WORKERS
+// ----------------------------------------------------
+
+model Queue {
+  id             String                @id @default(uuid())
+  projectId      String
+  project        Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  maxConcurrency Int                   @default(10)
+  isPaused       Boolean               @default(false)
+  rateLimitCount Int?                  // Max jobs per rateLimitWindowMs
+  rateLimitWindowMs Int?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  jobs           Job[]
+  schedules      RecurringSchedule[]
+  metrics        QueueMetricSnapshot[]
+
+  @@unique([projectId, name])
+  @@index([projectId, name])
+}
+
+model Worker {
+  id            String         @id @default(uuid())
+  hostname      String
+  pid           Int
+  status        WorkerStatus   @default(ACTIVE)
+  lastHeartbeat DateTime       @default(now())
+  concurrency   Int            @default(5)
+  activeJobs    Int            @default(0)
+  version       String?
+  startedAt     DateTime       @default(now())
+  jobs          Job[]
+  executions    JobExecution[]
+
+  @@index([status, lastHeartbeat])
+}
+
+// ----------------------------------------------------
+// 3. JOB EXECUTION ENGINE & DEPENDENCIES
+// ----------------------------------------------------
+
+model JobBatch {
+  id            String    @id @default(uuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String?
+  totalJobs     Int       @default(0)
+  completedJobs Int       @default(0)
+  failedJobs    Int       @default(0)
+  onCompleteUrl String?   // Webhook to fire when all jobs in batch complete
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  jobs          Job[]
+
+  @@index([projectId])
+}
+
+model Job {
+  id             String          @id @default(uuid())
+  queueId        String
+  queue          Queue           @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  batchId        String?
+  batch          JobBatch?       @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  scheduleId     String?
+  schedule       RecurringSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  status         JobStatus       @default(QUEUED)
+  priority       Int             @default(0) // Higher = faster pickup
+  payload        Json
+  result         Json?
+  errorDetails   String?
+  runAt          DateTime        @default(now())
+  timeoutMs      Int             @default(30000)
+  maxRetries     Int             @default(3)
+  retryCount     Int             @default(0)
+  backoffType    BackoffType     @default(EXPONENTIAL)
+  backoffDelayMs Int             @default(1000)
+  claimedById    String?
+  claimedBy      Worker?         @relation(fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt      DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  executions     JobExecution[]
+  dlqEntry       DlqEntry?
+  dependencies   JobDependency[] @relation("ChildJobs")
+  dependents     JobDependency[] @relation("ParentJobs")
+
+  // Primary Polling Index: For atomic FOR UPDATE SKIP LOCKED
+  @@index([status, runAt, priority(sort: Desc)])
+  @@index([queueId, status])
+  @@index([batchId])
+}
+
+model JobExecution {
+  id         String     @id @default(uuid())
+  jobId      String
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId   String?
+  worker     Worker?    @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  attempt    Int
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  status     JobStatus
+  logs       String?
+  error      String?
+
+  @@index([jobId, attempt])
+  @@index([workerId])
+}
+
+model JobDependency {
+  id          String   @id @default(uuid())
+  parentJobId String
+  parentJob   Job      @relation("ParentJobs", fields: [parentJobId], references: [id], onDelete: Cascade)
+  childJobId  String
+  childJob    Job      @relation("ChildJobs", fields: [childJobId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([parentJobId, childJobId])
+  @@index([childJobId])
+  @@index([parentJobId])
+}
+
+// ----------------------------------------------------
+// 4. RECURRING SCHEDULES & CRON
+// ----------------------------------------------------
+
+model RecurringSchedule {
+  id          String       @id @default(uuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  queueId     String
+  queue       Queue        @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  name        String
+  type        ScheduleType @default(CRON)
+  expression  String       // e.g. "*/5 * * * *" or "60000" (ms)
+  timezone    String       @default("UTC")
+  payload     Json
+  priority    Int          @default(0)
+  isActive    Boolean      @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  jobs        Job[]
+
+  @@index([isActive, nextRunAt])
+  @@index([projectId])
+}
+
+// ----------------------------------------------------
+// 5. DEAD LETTER QUEUE (DLQ) & AUDITING
+// ----------------------------------------------------
+
+model DlqEntry {
+  id           String    @id @default(uuid())
+  jobId        String    @unique
+  job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  failedReason String
+  stackTrace   String?
+  replayedAt   DateTime?
+  replayedBy   String?
+  createdAt    DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// 6. METRICS & OBSERVABILITY
+// ----------------------------------------------------
+
+model QueueMetricSnapshot {
+  id             String   @id @default(uuid())
+  queueId        String
+  queue          Queue    @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  timestamp      DateTime @default(now())
+  queuedCount    Int
+  runningCount   Int
+  completedCount Int
+  failedCount    Int
+  dlqCount       Int
+  avgLatencyMs   Float?
+  avgDurationMs  Float?
+
+  @@index([queueId, timestamp])
+}
