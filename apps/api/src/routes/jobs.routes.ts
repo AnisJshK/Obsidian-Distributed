@@ -3,6 +3,7 @@ import { Router } from "express";
 import { prisma, JobStatus, Prisma } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
 import { CreateJobSchema, CreateBatchJobSchema } from "../schemas/job.schema";
+import { AuthenticatedRequest } from "../middleware/auth.middleware";
 
 const router = Router();
 
@@ -10,9 +11,8 @@ const router = Router();
 // GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
 // ============================================================================
 // GET /api/jobs - List & Filter Jobs for Dashboard and Job Explorer
-router.get("/", async (req, res, next) => {
+router.get("/", async (req: AuthenticatedRequest, res, next) => {
   try {
-    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
     const queueName = typeof req.query.queueName === "string" ? req.query.queueName : undefined;
     const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
     const limitParam = typeof req.query.limit === "string" ? req.query.limit : undefined;
@@ -20,11 +20,13 @@ router.get("/", async (req, res, next) => {
     const whereClause: Prisma.JobWhereInput = {};
 
     // Filter by Project or Queue Name via Queue relation
-    if (projectId || (queueName && queueName !== "ALL")) {
+    if (queueName && queueName !== "ALL") {
       whereClause.queue = {
-        ...(projectId ? { projectId } : {}),
+        projectId: req.project!.id,
         ...(queueName && queueName !== "ALL" ? { name: queueName } : {}),
       };
+    } else {
+      whereClause.queue = { projectId: req.project!.id };
     }
 
     // Filter by Job Status
@@ -56,7 +58,7 @@ router.get("/", async (req, res, next) => {
 // ============================================================================
 // POST /api/jobs - Ingest single job (immediate or scheduled)
 // ============================================================================
-router.post("/", validate(CreateJobSchema), async (req, res, next) => {
+router.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest, res, next) => {
   try {
     const {
       name,
@@ -72,7 +74,7 @@ router.post("/", validate(CreateJobSchema), async (req, res, next) => {
       parentJobIds,
     } = req.body;
 
-    const queue = await prisma.queue.findFirst({ where: { name: queueName } });
+    const queue = await prisma.queue.findFirst({ where: { name: queueName, projectId: req.project!.id } });
     if (!queue) {
       res.status(404).json({ success: false, error: { code: "QUEUE_NOT_FOUND", message: `Queue '${queueName}' not found` } });
       return;
@@ -90,7 +92,6 @@ router.post("/", validate(CreateJobSchema), async (req, res, next) => {
       const created = await tx.job.create({
         data: {
           queueId: queue.id,
-          name:name??(payload?.action || payload?.task || "standard_task"),
           payload: payload as Prisma.InputJsonValue,
           priority,
           runAt: scheduledRunAt,

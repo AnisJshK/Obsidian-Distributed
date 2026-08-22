@@ -14,10 +14,12 @@ import {
   AlertTriangle,
   ExternalLink
 } from "lucide-react";
-import { DEFAULT_PROJECT_ID } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const projectId = session?.projectId || "";
 
   // State Management
   const [env, setEnv] = useState<"Production" | "Staging" | "Dev">("Production");
@@ -52,11 +54,11 @@ export const Navbar: React.FC = () => {
   const getWorkerSnippet = () => {
     switch (workerSnippetTab) {
       case "bun":
-        return `cd apps/worker\nPROJECT_ID="${DEFAULT_PROJECT_ID}" bun run dev`;
+        return `cd apps/worker\nPROJECT_ID="${projectId}" bun run dev`;
       case "docker":
-        return `docker run -e PROJECT_ID="${DEFAULT_PROJECT_ID}" -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/scheduler" obsidian-worker:latest`;
+        return `docker run -e PROJECT_ID="${projectId}" -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/scheduler" obsidian-worker:latest`;
       case "node":
-        return `export PROJECT_ID="${DEFAULT_PROJECT_ID}"\nnode dist/worker/index.js`;
+        return `export PROJECT_ID="${projectId}"\nnode dist/worker/index.js`;
     }
   };
 
@@ -179,9 +181,9 @@ export const Navbar: React.FC = () => {
                 <div className="space-y-1.5 font-mono text-xs">
                   <span className="text-slate-500 text-[10px]">Project ID</span>
                   <div className="p-2 bg-[#070b14] border border-[#162033] rounded flex items-center justify-between">
-                    <span className="text-slate-300 truncate text-[11px]">{DEFAULT_PROJECT_ID}</span>
+                    <span className="text-slate-300 truncate text-[11px]">{projectId}</span>
                     <button
-                      onClick={() => handleCopy(DEFAULT_PROJECT_ID)}
+                      onClick={() => handleCopy(projectId)}
                       className="text-slate-400 hover:text-white transition cursor-pointer"
                     >
                       {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}

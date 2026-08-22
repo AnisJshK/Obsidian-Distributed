@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
 import { ingestWorkflow } from "../services/workflow.service";
+import { AuthenticatedRequest } from "../middleware/auth.middleware";
 
 const IngestWorkflowSchema = z.object({
   projectId: z.string().uuid(),
@@ -26,13 +27,27 @@ const IngestWorkflowSchema = z.object({
 
 export const workflowsRouter = Router();
 
+// GET /api/workflows - List workflow batches for the authenticated project
+workflowsRouter.get("/", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const batches = await prisma.jobBatch.findMany({
+      where: { projectId: req.project!.id },
+      select: { id: true, name: true, totalJobs: true, completedJobs: true, failedJobs: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ success: true, data: batches });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ----------------------------------------------------
 // 1. Ingest a Workflow DAG Pipeline
 // ----------------------------------------------------
 workflowsRouter.post(
   "/",
   validate(IngestWorkflowSchema),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const result = await ingestWorkflow(req.body);
       res.status(201).json({
@@ -50,12 +65,12 @@ workflowsRouter.post(
 // ----------------------------------------------------
 workflowsRouter.get(
   "/:batchId",
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const { batchId } = req.params;
 
       const batch = await prisma.jobBatch.findUnique({
-        where: { id: batchId },
+        where: { id: batchId, projectId: req.project!.id },
         include: {
           jobs: {
             select: {

@@ -1,14 +1,13 @@
 // apps/web/src/pages/WorkflowsPage.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { 
   GitBranch, 
   RotateCw, 
   CheckCircle2, 
   Clock, 
-  XCircle, 
-  Play, 
   Terminal
 } from "lucide-react";
 
@@ -40,15 +39,38 @@ interface WorkflowBatch {
   jobs: WorkflowJobNode[];
 }
 
+interface WorkflowBatchSummary {
+  id: string;
+  name: string;
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+}
+
 export const WorkflowsPage: React.FC = () => {
-  const [activeBatchId, setActiveBatchId] = useState<string>("8c26632e-b6c9-4dd6-9072-b6f1af283f65");
+  const { session } = useAuth();
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<WorkflowJobNode | null>(null);
 
-  // Fetch Workflow Batch Details
-  const { data: batch, isLoading, refetch, isFetching } = useQuery<WorkflowBatch>({
-    queryKey: ["workflow-batch", activeBatchId],
+  const { data: batches = [] } = useQuery<WorkflowBatchSummary[]>({
+    queryKey: ["workflow-batches", session?.projectId],
+    enabled: !!session?.projectId,
     queryFn: async () => {
-      const res = await api.get(`/workflows/${activeBatchId}`);
+      const res = await api.get("/workflows");
+      return res.data?.data || [];
+    },
+  });
+
+  useEffect(() => {
+    if (!activeBatchId && batches.length > 0) setActiveBatchId(batches[0].id);
+  }, [activeBatchId, batches]);
+
+  // Fetch Workflow Batch Details
+  const { data: batch, refetch, isFetching } = useQuery<WorkflowBatch>({
+    queryKey: ["workflow-batch", activeBatchId],
+    enabled: !!activeBatchId,
+    queryFn: async () => {
+      const res = await api.get(`/workflows/${activeBatchId!}`);
       return res.data?.data;
     },
     refetchInterval: 2500,
@@ -82,7 +104,7 @@ export const WorkflowsPage: React.FC = () => {
             <GitBranch className="w-4 h-4 text-blue-400" />
             Active Pipeline Execution
           </span>
-          <span className="font-mono text-xs text-slate-500">{activeBatchId}</span>
+          <span className="font-mono text-xs text-slate-500">{activeBatchId || "No workflow runs"}</span>
         </div>
 
         {batch ? (
@@ -110,7 +132,9 @@ export const WorkflowsPage: React.FC = () => {
               </div>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <p className="p-8 text-center text-xs text-slate-500">No workflow runs found for this project.</p>
+        )}
       </div>
 
       {/* Visualizer & Context Split Grid */}

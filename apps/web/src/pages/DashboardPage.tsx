@@ -2,7 +2,8 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { 
   Layers, 
   Zap, 
@@ -47,21 +48,26 @@ interface WorkerSummary {
 }
 
 export const DashboardPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
+
   // 1. Fetch Queues and their Stats
-  const { data: queues = [], isLoading: queuesLoading, refetch: refetchQueues } = useQuery<QueueSummary[]>({
-    queryKey: ["dashboard-queues", DEFAULT_PROJECT_ID],
+  const { data: queues = [], refetch: refetchQueues } = useQuery<QueueSummary[]>({
+    queryKey: ["dashboard-queues", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get(`/queues?projectId=${projectId}`);
       return res.data?.data || [];
     },
     refetchInterval: 3000,
   });
 
   // 2. Fetch Recent Jobs
-  const { data: recentJobs = [], isLoading: jobsLoading, refetch: refetchJobs, isFetching } = useQuery<RecentJob[]>({
-    queryKey: ["dashboard-recent-jobs", DEFAULT_PROJECT_ID],
+  const { data: recentJobs = [], refetch: refetchJobs, isFetching } = useQuery<RecentJob[]>({
+    queryKey: ["dashboard-recent-jobs", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/jobs?projectId=${DEFAULT_PROJECT_ID}&limit=10`);
+      const res = await api.get(`/jobs?projectId=${projectId}&limit=10`);
       return res.data?.data || [];
     },
     refetchInterval: 3000,
@@ -70,6 +76,7 @@ export const DashboardPage: React.FC = () => {
   // 3. Fetch Worker Fleet
   const { data: workers = [] } = useQuery<WorkerSummary[]>({
     queryKey: ["dashboard-workers"],
+    enabled: !!session,
     queryFn: async () => {
       const res = await api.get("/workers");
       return res.data?.data || [];

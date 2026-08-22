@@ -1,7 +1,8 @@
 // apps/web/src/pages/JobsPage.tsx
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { 
   Search, 
   RotateCw, 
@@ -39,6 +40,8 @@ interface JobItem {
 const STATUS_TABS = ["ALL", "QUEUED", "CLAIMED", "RUNNING", "COMPLETED", "DLQ"] as const;
 
 export const JobsPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedQueue, setSelectedQueue] = useState<string>("ALL");
@@ -47,19 +50,21 @@ export const JobsPage: React.FC = () => {
 
   // 1. Fetch available queues for filter dropdown
   const { data: queues = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["queues-list", DEFAULT_PROJECT_ID],
+    queryKey: ["queues-list", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get(`/queues?projectId=${projectId}`);
       return res.data?.data || [];
     },
   });
 
   // 2. Fetch live jobs with periodic refetch
   const { data: jobs = [], isLoading, isFetching, refetch } = useQuery<JobItem[]>({
-    queryKey: ["jobs-explorer", DEFAULT_PROJECT_ID, selectedStatus, selectedQueue],
+    queryKey: ["jobs-explorer", projectId, selectedStatus, selectedQueue],
+    enabled: !!projectId,
     queryFn: async () => {
       const params = new URLSearchParams();
-      params.append("projectId", DEFAULT_PROJECT_ID);
+      params.append("projectId", projectId!);
       if (selectedStatus !== "ALL") params.append("status", selectedStatus);
       if (selectedQueue !== "ALL") params.append("queueName", selectedQueue);
 

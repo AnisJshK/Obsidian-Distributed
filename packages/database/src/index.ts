@@ -27,9 +27,11 @@ const pool =
   globalThis.__scheduler_pg_pool__ ??
   new Pool({
     connectionString,
-    max: 20,
+    max: Number(process.env.DATABASE_POOL_MAX || 5),
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   });
 
 const adapter = new PrismaPg(pool);

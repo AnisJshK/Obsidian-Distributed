@@ -1,14 +1,13 @@
 // apps/web/src/pages/DlqPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { 
   AlertOctagon, 
   RotateCw, 
-  Trash2, 
   Copy, 
   Check, 
-  XCircle,
   Play
 } from "lucide-react";
 
@@ -24,16 +23,19 @@ interface DlqJob {
 }
 
 export const DlqPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
   const queryClient = useQueryClient();
   const [selectedSignature, setSelectedSignature] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<DlqJob | null>(null);
   const [copiedTrace, setCopiedTrace] = useState(false);
 
   // 1. Fetch DLQ Jobs
-  const { data: dlqJobs = [], isLoading, isFetching, refetch } = useQuery<DlqJob[]>({
-    queryKey: ["dlq-jobs", DEFAULT_PROJECT_ID],
+  const { data: dlqJobs = [], isFetching, refetch } = useQuery<DlqJob[]>({
+    queryKey: ["dlq-jobs", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/dlq?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get(`/dlq?projectId=${projectId}`);
       return res.data?.data || [];
     },
     refetchInterval: 3000,
@@ -71,7 +73,7 @@ export const DlqPage: React.FC = () => {
   // 3. Retry All Jobs in DLQ
   const retryAllMutation = useMutation({
     mutationFn: async () => {
-      await api.post("/dlq/retry-all", { projectId: DEFAULT_PROJECT_ID });
+      await api.post("/dlq/retry-all", { projectId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dlq-jobs"] });

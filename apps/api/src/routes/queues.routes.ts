@@ -2,13 +2,15 @@ import { Router } from "express";
 import { prisma, JobStatus } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
 import { CreateQueueSchema, UpdateQueueSchema } from "../schemas/queue.schema";
+import { AuthenticatedRequest } from "../middleware/auth.middleware";
 
-const router = Router();
+const queuesRouter = Router();
 
 // GET /api/queues - List all queues with live job counts
-router.get("/", async (_req, res, next) => {
+queuesRouter.get("/", async (req: AuthenticatedRequest, res, next) => {
   try {
     const queues = await prisma.queue.findMany({
+      where: { projectId: req.project!.id },
       include: {
         _count: {
           select: {
@@ -57,19 +59,13 @@ router.get("/", async (_req, res, next) => {
 });
 
 // POST /api/queues - Create a new queue
-router.post("/", validate(CreateQueueSchema), async (req, res, next) => {
+queuesRouter.post("/", validate(CreateQueueSchema), async (req: AuthenticatedRequest, res, next) => {
   try {
     const { name, maxConcurrency, rateLimitCount, rateLimitWindowMs } = req.body;
 
-    const defaultProject = await prisma.project.findFirst();
-    if (!defaultProject) {
-      res.status(400).json({ success: false, error: { code: "NO_PROJECT", message: "Run seed script first" } });
-      return;
-    }
-
     const queue = await prisma.queue.create({
       data: {
-        projectId: defaultProject.id,
+        projectId: req.project!.id,
         name,
         maxConcurrency,
         rateLimitCount,
@@ -84,7 +80,7 @@ router.post("/", validate(CreateQueueSchema), async (req, res, next) => {
 });
 
 // PATCH /api/queues/:id - Update concurrency or pause/resume
-router.patch("/:id", validate(UpdateQueueSchema), async (req, res, next) => {
+queuesRouter.patch("/:id", validate(UpdateQueueSchema), async (req, res, next) => {
   try {
     const { id } = req.params;
     const queue = await prisma.queue.update({
@@ -98,4 +94,4 @@ router.patch("/:id", validate(UpdateQueueSchema), async (req, res, next) => {
   }
 });
 
-export default router;
+export default queuesRouter;

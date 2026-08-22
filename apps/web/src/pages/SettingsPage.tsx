@@ -1,7 +1,8 @@
 // apps/web/src/pages/SettingsPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { Key, Plus, Copy, Check, Shield, Trash2 } from "lucide-react";
 
 interface ApiKeyItem {
@@ -13,6 +14,8 @@ interface ApiKeyItem {
 }
 
 export const SettingsPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
   const queryClient = useQueryClient();
   const [newKeyName, setNewKeyName] = useState("");
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
@@ -21,9 +24,10 @@ export const SettingsPage: React.FC = () => {
 
   // 1. Fetch live API keys for this project
   const { data: keys = [], isLoading } = useQuery<ApiKeyItem[]>({
-    queryKey: ["api-keys", DEFAULT_PROJECT_ID],
+    queryKey: ["api-keys", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/auth/keys?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get("/auth/keys");
       return res.data?.data || [];
     },
   });
@@ -32,7 +36,7 @@ export const SettingsPage: React.FC = () => {
   const generateKeyMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/auth/keys", {
-        projectId: DEFAULT_PROJECT_ID,
+        projectId,
         name: newKeyName,
         expiresInDays: 90,
       });
@@ -94,7 +98,7 @@ export const SettingsPage: React.FC = () => {
               <input
                 type="text"
                 readOnly
-                value={DEFAULT_PROJECT_ID}
+                value={projectId || ""}
                 className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-slate-300 font-mono text-[11px]"
               />
             </div>

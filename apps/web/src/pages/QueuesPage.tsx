@@ -1,8 +1,9 @@
 // apps/web/src/pages/QueuesPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
-import { Plus, MoreVertical, Layers, RefreshCw } from "lucide-react";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import { Plus, MoreVertical, Layers } from "lucide-react";
 
 interface QueueData {
   id: string;
@@ -19,6 +20,8 @@ interface QueueData {
 }
 
 export const QueuesPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newQueueName, setNewQueueName] = useState("");
@@ -26,9 +29,10 @@ export const QueuesPage: React.FC = () => {
 
   // 1. Fetch live queues
   const { data: queues = [], isLoading } = useQuery<QueueData[]>({
-    queryKey: ["queues", DEFAULT_PROJECT_ID],
+    queryKey: ["queues", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get(`/queues?projectId=${projectId}`);
       return res.data?.data || [];
     },
   });
@@ -58,7 +62,7 @@ export const QueuesPage: React.FC = () => {
   const createQueueMutation = useMutation({
     mutationFn: async () => {
       await api.post("/queues", {
-        projectId: DEFAULT_PROJECT_ID,
+        projectId,
         name: newQueueName,
         maxConcurrency: newConcurrency,
         priority: 10,

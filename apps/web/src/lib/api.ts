@@ -2,7 +2,6 @@
 import axios from "axios";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
-export const DEFAULT_PROJECT_ID = "b1191a83-2810-4043-8d07-d7e1adc068d5";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -19,3 +18,17 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if ([401, 403].includes(error.response?.status)) {
+      localStorage.removeItem("djs_api_key");
+      localStorage.removeItem("djs_project_id");
+      if (window.location.pathname !== "/auth") {
+        window.location.assign("/auth");
+      }
+    }
+    return Promise.reject(error);
+  }
+);

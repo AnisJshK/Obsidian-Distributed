@@ -1,14 +1,10 @@
 // apps/web/src/pages/SchedulesPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, DEFAULT_PROJECT_ID } from "../lib/api";
+import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { 
-  Calendar, 
   Plus, 
-  Clock, 
-  Play, 
-  Pause, 
-  CheckCircle2, 
   RotateCw 
 } from "lucide-react";
 import { formatTimeAgo } from "../lib/utils";
@@ -25,6 +21,8 @@ interface ScheduleItem {
 }
 
 export const SchedulesPage: React.FC = () => {
+  const { session } = useAuth();
+  const projectId = session?.projectId;
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
@@ -33,9 +31,10 @@ export const SchedulesPage: React.FC = () => {
 
   // 1. Fetch live recurring schedules
   const { data: schedules = [], isLoading, isFetching, refetch } = useQuery<ScheduleItem[]>({
-    queryKey: ["schedules", DEFAULT_PROJECT_ID],
+    queryKey: ["schedules", projectId],
+    enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/schedules?projectId=${DEFAULT_PROJECT_ID}`);
+      const res = await api.get(`/schedules?projectId=${projectId}`);
       return res.data?.data || [];
     },
     refetchInterval: 5000,
@@ -45,7 +44,7 @@ export const SchedulesPage: React.FC = () => {
   const createScheduleMutation = useMutation({
     mutationFn: async () => {
       await api.post("/schedules", {
-        projectId: DEFAULT_PROJECT_ID,
+        projectId,
         name,
         queueName,
         cronExpression,

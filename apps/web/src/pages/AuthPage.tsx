@@ -1,27 +1,54 @@
 // apps/web/src/pages/AuthPage.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { KeyRound, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
+import { KeyRound, Sparkles, ShieldCheck } from "lucide-react";
 import axios from "axios";
 import { API_BASE_URL } from "../lib/api";
 
 export const AuthPage: React.FC = () => {
   const { login } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [apiKey, setApiKey] = useState("");
-  const [projectId, setProjectId] = useState("b1191a83-2810-4043-8d07-d7e1adc068d5");
+  const [projectId, setProjectId] = useState("");
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [keyName, setKeyName] = useState("Developer Console Key");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/auth/projects`)
+      .then((res) => {
+        const availableProjects = res.data?.data || [];
+        setProjects(availableProjects);
+        if (availableProjects.length === 1) setProjectId(availableProjects[0].id);
+      })
+      .catch(() => setError("Unable to load available projects."));
+  }, []);
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim()) {
       setError("Please provide a valid API Key");
       return;
     }
     setError(null);
-    login(apiKey.trim(), projectId.trim());
+    setLoading(true);
+    try {
+      const key = apiKey.trim();
+      const res = await axios.get(`${API_BASE_URL}/auth/session`, {
+        headers: { "X-API-Key": key },
+      });
+      const project = res.data?.data?.project;
+      if (!project?.id) throw new Error("API key is not associated with a project.");
+      login(key, project.id, project.name);
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || err.message || "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateKey = async (e: React.FormEvent) => {
@@ -38,6 +65,7 @@ export const AuthPage: React.FC = () => {
 
       if (res.data?.data?.apiKey) {
         login(res.data.data.apiKey, projectId.trim(), keyName);
+        navigate("/", { replace: true });
       } else {
         throw new Error("API Key was not returned by server.");
       }
@@ -101,14 +129,7 @@ export const AuthPage: React.FC = () => {
         {mode === "signin" ? (
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Project ID (UUID)</label>
-              <input
-                type="text"
-                required
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-blue-500 transition"
-              />
+              <p className="text-xs text-slate-500">Your project is resolved automatically from the API key.</p>
             </div>
 
             <div>
@@ -128,20 +149,24 @@ export const AuthPage: React.FC = () => {
               className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              Access Dashboard
+              {loading ? "Validating Key..." : "Access Dashboard"}
             </button>
           </form>
         ) : (
           <form onSubmit={handleCreateKey} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Project ID (UUID)</label>
-              <input
-                type="text"
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">Project</label>
+              <select
                 required
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
                 className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-blue-500 transition"
-              />
+              >
+                <option value="" disabled>Select a project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>

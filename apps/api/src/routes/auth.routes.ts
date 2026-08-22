@@ -3,6 +3,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { prisma } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
+import { AuthenticatedRequest, requireApiKey } from "../middleware/auth.middleware";
 import { randomBytes, createHash } from "node:crypto";
 
 const CreateApiKeySchema = z.object({
@@ -12,14 +13,28 @@ const CreateApiKeySchema = z.object({
 });
 
 export const authRouter = Router();
+// GET /api/auth/projects - List projects available for initial key provisioning
+authRouter.get("/projects", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const projects = await prisma.project.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    res.json({ success: true, data: projects });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/auth/session - Resolve the project attached to an API key
+authRouter.get("/session", requireApiKey, (req: AuthenticatedRequest, res: Response) => {
+  res.json({ success: true, data: { project: req.project } });
+});
 
 // 1. GET /api/auth/keys?projectId=... - List all API keys for a project
-authRouter.get("/keys", async (req: Request, res: Response, next: NextFunction) => {
+authRouter.get("/keys", requireApiKey, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const projectId = req.query.projectId as string;
-    if (!projectId) {
-      return res.status(400).json({ success: false, error: { message: "projectId query param is required" } });
-    }
+    const projectId = req.project!.id;
 
     const keys = await prisma.apiKey.findMany({
       where: { projectId },
