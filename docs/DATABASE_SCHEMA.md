@@ -85,7 +85,7 @@ erDiagram
 
     DlqEntry {
         string id PK "UUID"
-        string jobId FK UK
+        string jobId UK "FK"
         string errorDetails "Crash Trace"
         datetime failedAt
     }
