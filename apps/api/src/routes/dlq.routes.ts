@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { prisma, JobStatus } from "@scheduler/database";
 
-const router = Router();
+const dlqRouter = Router();
 
 // GET /api/dlq - List all dead-letter jobs with failure traces
-router.get("/", async (_req, res, next) => {
+dlqRouter.get("/", async (_req, res, next) => {
   try {
     const dlqEntries = await prisma.dlqEntry.findMany({
       include: {
@@ -24,7 +24,7 @@ router.get("/", async (_req, res, next) => {
 });
 
 // POST /api/dlq/:jobId/replay - Replay a failed dead-letter job
-router.post("/:jobId/replay", async (req, res, next) => {
+dlqRouter.post("/:jobId/replay", async (req, res, next) => {
   try {
     const { jobId } = req.params;
 
@@ -73,4 +73,4 @@ router.post("/:jobId/replay", async (req, res, next) => {
   }
 });
 
-export default router;
+export default dlqRouter;

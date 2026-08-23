@@ -3,10 +3,10 @@
 Base URL:
 
 ```text
-http://localhost:3000
+http://localhost:4000
 ```
 
-All API responses follow this general structure:
+All API responses generally follow this structure:
 
 ```json
 {
@@ -17,46 +17,176 @@ All API responses follow this general structure:
 
 ---
 
-## 1. Authentication
+# 1. Authentication & API Keys
 
-### Create Project
+Authentication-related routes are mounted under `/api/auth`.
 
-Creates a new project and generates an API key.
+## Register Project
 
-**Endpoint**
+Creates a new project.
+
+### Endpoint
 
 ```http
-POST /api/auth/projects
+POST /api/auth/register-project
 ```
 
-**Response — `201 Created`**
+### Request Body
+
+```json
+{
+  "name": "Production Analytics"
+}
+```
+
+### Response — `201 Created`
 
 ```json
 {
   "success": true,
   "data": {
     "projectId": "8b191a83-2810-4043-8d07-d7e1adc068d5",
-    "projectName": "Production Analytics",
-    "apiKey": "djs_live_5fa9c84e1b824a739281e01f"
+    "projectName": "Production Analytics"
   }
 }
 ```
 
-> **Security:** Never commit real API keys to GitHub. Replace the example key with a placeholder such as `djs_live_xxx` in a public repository.
+---
+
+## List Projects
+
+Returns projects available to the authenticated context.
+
+### Endpoint
+
+```http
+GET /api/auth/projects
+```
+
+### Authentication
+
+Requires a valid API key.
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "8b191a83-2810-4043-8d07-d7e1adc068d5",
+      "name": "Production Analytics"
+    }
+  ]
+}
+```
 
 ---
 
-### Verify API Key
+## Create API Key
+
+Creates a new API key for the authenticated project.
+
+### Endpoint
+
+```http
+POST /api/auth/keys
+```
+
+### Authentication
+
+Requires a valid API key.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "key-123",
+    "apiKey": "djs_live_xxx"
+  }
+}
+```
+
+> **Security:** API keys are secrets. Never commit real API keys to GitHub or expose them in frontend code.
+
+---
+
+## List API Keys
+
+Returns API keys associated with the authenticated project.
+
+### Endpoint
+
+```http
+GET /api/auth/keys
+```
+
+### Authentication
+
+Requires a valid API key.
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "key-123",
+      "createdAt": "2026-08-23T04:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## Delete API Key
+
+Deletes an API key.
+
+### Endpoint
+
+```http
+DELETE /api/auth/keys/:id
+```
+
+### Authentication
+
+Requires a valid API key.
+
+### Path Parameters
+
+| Parameter | Type     | Description                 |
+| --------- | -------- | --------------------------- |
+| `id`      | `string` | ID of the API key to delete |
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": true
+  }
+}
+```
+
+---
+
+## Verify API Key
 
 Verifies an API key and returns the associated project.
 
-**Endpoint**
+### Endpoint
 
 ```http
 POST /api/auth/verify
 ```
 
-**Request Body**
+### Request Body
 
 ```json
 {
@@ -64,7 +194,7 @@ POST /api/auth/verify
 }
 ```
 
-**Response — `200 OK`**
+### Response — `200 OK`
 
 ```json
 {
@@ -82,17 +212,21 @@ POST /api/auth/verify
 
 ---
 
-### Get Session Information
+## Get Session
 
 Returns information about the currently authenticated project.
 
-**Endpoint**
+### Endpoint
 
 ```http
 GET /api/auth/session
 ```
 
-**Response — `200 OK`**
+### Authentication
+
+Requires a valid API key.
+
+### Response — `200 OK`
 
 ```json
 {
@@ -108,25 +242,70 @@ GET /api/auth/session
 
 ---
 
-# 2. Jobs & Workflows
+# 2. Jobs
+
+Job-related routes are mounted under `/api/jobs`.
+
+## List Jobs
+
+Returns jobs belonging to the authenticated project.
+
+### Endpoint
+
+```http
+GET /api/jobs
+```
+
+### Query Parameters
+
+| Parameter   | Required | Description                   |
+| ----------- | -------- | ----------------------------- |
+| `status`    | No       | Filter jobs by status         |
+| `queueName` | No       | Filter jobs by queue          |
+| `limit`     | No       | Limit number of returned jobs |
+| `offset`    | No       | Pagination offset             |
+
+### Example
+
+```http
+GET /api/jobs?status=QUEUED&queueName=default
+```
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "c71a82e9-4043-8d07-a81d-e01f5fa9c84e",
+      "status": "COMPLETED",
+      "priority": 10,
+      "retryCount": 0,
+      "queue": {
+        "name": "default"
+      }
+    }
+  ]
+}
+```
+
+---
 
 ## Enqueue Job
 
 Creates and queues a new background job.
 
-Supports job priority, retries, exponential backoff, and parent job dependencies for workflow/DAG execution.
-
-**Endpoint**
+### Endpoint
 
 ```http
 POST /api/jobs
 ```
 
-**Request Body**
+### Request Body
 
 ```json
 {
-  "projectId": "8b191a83-2810-4043-8d07-d7e1adc068d5",
   "queueName": "default",
   "payload": {
     "task": "send-email",
@@ -135,27 +314,11 @@ POST /api/jobs
   "priority": 10,
   "maxRetries": 3,
   "backoffType": "EXPONENTIAL",
-  "backoffDelayMs": 1000,
-  "parentJobIds": [
-    "optional-parent-job-uuid"
-  ]
+  "backoffDelayMs": 1000
 }
 ```
 
-### Request Parameters
-
-| Field            | Type       | Description                                    |
-| ---------------- | ---------- | ---------------------------------------------- |
-| `projectId`      | `string`   | ID of the project that owns the job            |
-| `queueName`      | `string`   | Queue where the job should be executed         |
-| `payload`        | `object`   | Arbitrary data required by the worker          |
-| `priority`       | `number`   | Job priority                                   |
-| `maxRetries`     | `number`   | Maximum number of retry attempts               |
-| `backoffType`    | `string`   | Retry backoff strategy                         |
-| `backoffDelayMs` | `number`   | Initial retry delay in milliseconds            |
-| `parentJobIds`   | `string[]` | Optional parent jobs for workflow dependencies |
-
-**Response — `201 Created`**
+### Response — `201 Created`
 
 ```json
 {
@@ -171,42 +334,54 @@ POST /api/jobs
 
 ---
 
-## List / Filter Jobs
+## Batch Enqueue Jobs
 
-Returns jobs for a project with optional filtering by status and queue.
+Creates multiple jobs in a single request.
 
-**Endpoint**
+### Endpoint
 
 ```http
-GET /api/jobs?projectId={id}&status=QUEUED&queueName=default
+POST /api/jobs/batch
 ```
 
-### Query Parameters
+### Request Body
 
-| Parameter   | Required | Description           |
-| ----------- | -------- | --------------------- |
-| `projectId` | Yes      | Project ID            |
-| `status`    | No       | Filter jobs by status |
-| `queueName` | No       | Filter jobs by queue  |
+```json
+{
+  "jobs": [
+    {
+      "queueName": "default",
+      "payload": {
+        "task": "send-email",
+        "to": "user1@example.com"
+      },
+      "priority": 10
+    },
+    {
+      "queueName": "default",
+      "payload": {
+        "task": "send-email",
+        "to": "user2@example.com"
+      },
+      "priority": 5
+    }
+  ]
+}
+```
 
-**Response — `200 OK`**
+### Response
 
 ```json
 {
   "success": true,
   "data": [
     {
-      "id": "c71a82e9-4043-8d07-a81d-e01f5fa9c84e",
-      "queue": {
-        "name": "default"
-      },
-      "status": "COMPLETED",
-      "priority": 10,
-      "retryCount": 0,
-      "duration": "480ms",
-      "result": {
-        "status": "delivered"
-      }
+      "id": "job-1",
+      "status": "QUEUED"
+    },
+    {
+      "id": "job-2",
+      "status": "QUEUED"
     }
   ]
 }
@@ -214,25 +389,150 @@ GET /api/jobs?projectId={id}&status=QUEUED&queueName=default
 
 ---
 
-# 3. Queues & Recurring Schedules
+## Get Job
+
+Returns detailed information about a specific job.
+
+### Endpoint
+
+```http
+GET /api/jobs/:id
+```
+
+### Path Parameters
+
+| Parameter | Type     | Description |
+| --------- | -------- | ----------- |
+| `id`      | `string` | Job ID      |
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "c71a82e9-4043-8d07-a81d-e01f5fa9c84e",
+    "status": "COMPLETED",
+    "priority": 10,
+    "retryCount": 0,
+    "result": {
+      "status": "delivered"
+    }
+  }
+}
+```
+
+---
+
+## Cancel Job
+
+Cancels a job.
+
+### Endpoint
+
+```http
+POST /api/jobs/:id/cancel
+```
+
+### Path Parameters
+
+| Parameter | Type     | Description |
+| --------- | -------- | ----------- |
+| `id`      | `string` | Job ID      |
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "c71a82e9-4043-8d07-a81d-e01f5fa9c84e",
+    "status": "CANCELLED"
+  }
+}
+```
+
+---
+
+# 3. Dead Letter Queue
+
+DLQ routes are mounted under `/api/dlq`.
+
+The Dead Letter Queue contains jobs that have permanently failed after exhausting their retry attempts.
+
+## List Dead Letter Jobs
+
+Returns jobs currently in the dead letter queue.
+
+### Endpoint
+
+```http
+GET /api/dlq
+```
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "job-123",
+      "status": "FAILED",
+      "retryCount": 3,
+      "error": "Connection timeout"
+    }
+  ]
+}
+```
+
+---
+
+## Replay Dead Letter Job
+
+Requeues a failed job from the dead letter queue.
+
+### Endpoint
+
+```http
+POST /api/dlq/:jobId/replay
+```
+
+### Path Parameters
+
+| Parameter | Type     | Description          |
+| --------- | -------- | -------------------- |
+| `jobId`   | `string` | ID of the failed job |
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "job-123",
+    "status": "QUEUED"
+  }
+}
+```
+
+---
+
+# 4. Queues
+
+Queue routes are mounted under `/api/queues`.
 
 ## List Queues
 
-Returns all queues belonging to a project.
+Returns queues belonging to the authenticated project.
 
-**Endpoint**
+### Endpoint
 
 ```http
-GET /api/queues?projectId={id}
+GET /api/queues
 ```
 
-### Query Parameters
-
-| Parameter   | Required | Description |
-| ----------- | -------- | ----------- |
-| `projectId` | Yes      | Project ID  |
-
-**Response — `200 OK`**
+### Response — `200 OK`
 
 ```json
 {
@@ -250,21 +550,100 @@ GET /api/queues?projectId={id}
 
 ---
 
-## Register Cron Schedule
+## Create Queue
+
+Creates a new job queue.
+
+### Endpoint
+
+```http
+POST /api/queues
+```
+
+### Request Body
+
+```json
+{
+  "name": "emails",
+  "maxConcurrency": 10
+}
+```
+
+### Response — `201 Created`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "q-123",
+    "name": "emails",
+    "isPaused": false,
+    "maxConcurrency": 10
+  }
+}
+```
+
+---
+
+## Update Queue
+
+Updates queue configuration.
+
+### Endpoint
+
+```http
+PATCH /api/queues/:id
+```
+
+### Path Parameters
+
+| Parameter | Type     | Description |
+| --------- | -------- | ----------- |
+| `id`      | `string` | Queue ID    |
+
+### Request Body
+
+```json
+{
+  "maxConcurrency": 20,
+  "isPaused": true
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "q-123",
+    "name": "emails",
+    "isPaused": true,
+    "maxConcurrency": 20
+  }
+}
+```
+
+---
+
+# 5. Recurring Schedules
+
+Schedule routes are mounted under `/api/schedules`.
+
+## Create Schedule
 
 Creates a recurring job schedule using a cron expression.
 
-**Endpoint**
+### Endpoint
 
 ```http
 POST /api/schedules
 ```
 
-**Request Body**
+### Request Body
 
 ```json
 {
-  "projectId": "8b191a83-2810-4043-8d07-d7e1adc068d5",
   "queueName": "default",
   "cronExpression": "*/5 * * * *",
   "payload": {
@@ -277,12 +656,11 @@ POST /api/schedules
 
 | Field            | Type     | Description                           |
 | ---------------- | -------- | ------------------------------------- |
-| `projectId`      | `string` | Project ID                            |
 | `queueName`      | `string` | Queue used for scheduled jobs         |
 | `cronExpression` | `string` | Cron expression defining the schedule |
-| `payload`        | `object` | Payload passed to the generated job   |
+| `payload`        | `object` | Payload passed to generated jobs      |
 
-**Response — `201 Created`**
+### Response — `201 Created`
 
 ```json
 {
@@ -297,29 +675,200 @@ POST /api/schedules
 
 ---
 
-# API Summary
+## List Schedules
 
-| Method | Endpoint             | Description               |
-| ------ | -------------------- | ------------------------- |
-| `POST` | `/api/auth/projects` | Create a project          |
-| `POST` | `/api/auth/verify`   | Verify an API key         |
-| `GET`  | `/api/auth/session`  | Get authenticated session |
-| `POST` | `/api/jobs`          | Enqueue a job             |
-| `GET`  | `/api/jobs`          | List/filter jobs          |
-| `GET`  | `/api/queues`        | List project queues       |
-| `POST` | `/api/schedules`     | Register a cron schedule  |
+Returns recurring schedules belonging to the authenticated project.
+
+### Endpoint
+
+```http
+GET /api/schedules
+```
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "sched-99182a",
+      "cronExpression": "*/5 * * * *",
+      "nextRunAt": "2026-08-23T04:05:00.000Z"
+    }
+  ]
+}
+```
 
 ---
 
-## Job Lifecycle
+# 6. Workers
+
+Worker routes are mounted under `/api/workers`.
+
+## List Workers
+
+Returns workers currently registered with the scheduler.
+
+### Endpoint
+
+```http
+GET /api/workers
+```
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "worker-123",
+      "status": "ONLINE",
+      "concurrency": 10
+    }
+  ]
+}
+```
+
+---
+
+# 7. Workflows
+
+Workflow routes are mounted under `/api/workflows`.
+
+Workflows allow multiple jobs to be executed as a dependency graph.
+
+## List Workflows
+
+Returns workflows belonging to the authenticated project.
+
+### Endpoint
+
+```http
+GET /api/workflows
+```
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "workflow-123",
+      "status": "COMPLETED"
+    }
+  ]
+}
+```
+
+---
+
+## Create Workflow
+
+Creates a new workflow/DAG.
+
+### Endpoint
+
+```http
+POST /api/workflows
+```
+
+### Request Body
+
+The exact workflow schema is defined by `CreateWorkflowSchema`.
+
+Example structure:
+
+```json
+{
+  "name": "Data Processing Pipeline",
+  "jobs": [
+    {
+      "id": "extract",
+      "queueName": "default",
+      "payload": {
+        "task": "extract"
+      }
+    },
+    {
+      "id": "transform",
+      "queueName": "default",
+      "payload": {
+        "task": "transform"
+      },
+      "parentJobIds": [
+        "extract"
+      ]
+    }
+  ]
+}
+```
+
+### Response — `201 Created`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "workflow-123",
+    "status": "QUEUED"
+  }
+}
+```
+
+---
+
+## Get Workflow
+
+Returns details for a specific workflow/batch.
+
+### Endpoint
+
+```http
+GET /api/workflows/:batchId
+```
+
+### Path Parameters
+
+| Parameter | Type     | Description               |
+| --------- | -------- | ------------------------- |
+| `batchId` | `string` | Workflow/batch identifier |
+
+### Response — `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "workflow-123",
+    "status": "RUNNING",
+    "jobs": [
+      {
+        "id": "job-1",
+        "status": "COMPLETED"
+      },
+      {
+        "id": "job-2",
+        "status": "RUNNING"
+      }
+    ]
+  }
+}
+```
+
+---
+
+# 8. Job Lifecycle
 
 Jobs generally follow this lifecycle:
 
 ```text
 QUEUED
-  ↓
+   ↓
 RUNNING
-  ↓
+   ↓
 COMPLETED
 ```
 
@@ -327,23 +876,35 @@ If execution fails:
 
 ```text
 QUEUED
-  ↓
+   ↓
 RUNNING
-  ↓
+   ↓
 FAILED
-  ↓
+   ↓
 RETRY
-  ↓
+   ↓
 RUNNING
 ```
 
-Jobs can be retried according to their configured `maxRetries`, `backoffType`, and `backoffDelayMs`.
+After all retry attempts are exhausted:
+
+```text
+FAILED
+   ↓
+DEAD LETTER QUEUE
+```
+
+A job in the DLQ can be manually replayed using:
+
+```http
+POST /api/dlq/:jobId/replay
+```
 
 ---
 
-## Workflow / DAG Execution
+# 9. Workflow / DAG Execution
 
-Jobs can depend on other jobs using `parentJobIds`.
+Jobs can depend on other jobs.
 
 Example:
 
@@ -359,6 +920,92 @@ Job A
          └──> Job D
 ```
 
-A job with parent dependencies should only become executable once its required parent jobs have completed successfully.
+In this example:
+
+* Job B depends on Job A.
+* Job C depends on Job A.
+* Job D depends on both Job B and Job C.
+* Job D should only execute after all required parent jobs complete successfully.
+
+This allows the scheduler to execute complex workflows as directed acyclic graphs (DAGs).
 
 ---
+
+# 10. API Summary
+
+| Method   | Endpoint                     | Description               |
+| -------- | ---------------------------- | ------------------------- |
+| `DELETE` | `/api/auth/keys/:id`         | Delete API key            |
+| `POST`   | `/api/auth/keys`             | Create API key            |
+| `GET`    | `/api/auth/keys`             | List API keys             |
+| `GET`    | `/api/auth/session`          | Get authenticated session |
+| `GET`    | `/api/auth/projects`         | List projects             |
+| `POST`   | `/api/auth/verify`           | Verify API key            |
+| `POST`   | `/api/auth/register-project` | Register project          |
+| `GET`    | `/api/dlq`                   | List dead letter jobs     |
+| `POST`   | `/api/dlq/:jobId/replay`     | Replay failed job         |
+| `GET`    | `/api/jobs`                  | List jobs                 |
+| `POST`   | `/api/jobs`                  | Enqueue job               |
+| `POST`   | `/api/jobs/batch`            | Enqueue jobs in batch     |
+| `GET`    | `/api/jobs/:id`              | Get job details           |
+| `POST`   | `/api/jobs/:id/cancel`       | Cancel job                |
+| `GET`    | `/api/queues`                | List queues               |
+| `POST`   | `/api/queues`                | Create queue              |
+| `PATCH`  | `/api/queues/:id`            | Update queue              |
+| `POST`   | `/api/schedules`             | Create recurring schedule |
+| `GET`    | `/api/schedules`             | List recurring schedules  |
+| `GET`    | `/api/workers`               | List workers              |
+| `GET`    | `/api/workflows`             | List workflows            |
+| `POST`   | `/api/workflows`             | Create workflow           |
+| `GET`    | `/api/workflows/:batchId`    | Get workflow details      |
+
+---
+
+# 11. Authentication
+
+Routes using `requireApiKey` require a valid API key.
+
+For authenticated requests, provide the API key through the authentication mechanism configured by the API server.
+
+Example:
+
+```http
+Authorization: Bearer djs_live_xxx
+```
+
+> The exact authentication header should match the implementation of `requireApiKey`.
+
+---
+
+# 12. API Architecture
+
+The API is organized into the following functional areas:
+
+```text
+                         API Server
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+   Authentication          Jobs              Queues
+        │                    │                    │
+   API Keys              Batch Jobs          Configuration
+   Projects              Cancellation        Concurrency
+   Sessions              Retries             Pause/Resume
+        │                    │
+        │              ┌─────┴─────┐
+        │              │           │
+        │             DLQ       Workflows
+        │              │           │
+        │           Replay       DAGs
+        │                        Dependencies
+        │
+        ├────────────── Schedules
+        │                  │
+        │               Cron Jobs
+        │
+        └────────────── Workers
+                           │
+                       Execution
+```
+
+This API exposes the core functionality of the distributed job scheduler: project authentication, queue management, job execution, retries, dead-letter handling, recurring schedules, workers, and workflow/DAG execution.

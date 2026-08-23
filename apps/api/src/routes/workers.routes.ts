@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { prisma } from "@scheduler/database";
 
-const router = Router();
+const workersRouter = Router();
 
 // GET /api/workers - Inspect all active & stalled worker nodes
-router.get("/", async (_req, res, next) => {
+workersRouter.get("/", async (_req, res, next) => {
   try {
     const workers = await prisma.worker.findMany({
       orderBy: { lastHeartbeat: "desc" },
@@ -16,4 +16,4 @@ router.get("/", async (_req, res, next) => {
   }
 });
 
-export default router;
+export default workersRouter;
