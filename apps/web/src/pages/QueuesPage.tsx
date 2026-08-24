@@ -1,50 +1,27 @@
 // apps/web/src/pages/QueuesPage.tsx
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { useProject } from "../context/ProjectContext";
 import { Plus, MoreVertical, Layers } from "lucide-react";
-
-interface QueueData {
-  id: string;
-  name: string;
-  isPaused: boolean;
-  maxConcurrency: number;
-  priority: number;
-  stats?: {
-    queued: number;
-    running: number;
-    completed: number;
-    dlq: number;
-  };
-}
+import { useData } from "../context/DataContext";
 
 export const QueuesPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
-  const queryClient = useQueryClient();
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
+  const { queues, queuesLoading, refetchQueues, queuesError } = useData();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newQueueName, setNewQueueName] = useState("");
   const [newConcurrency, setNewConcurrency] = useState(10);
-
-  // 1. Fetch live queues
-  const { data: queues = [], isLoading } = useQuery<QueueData[]>({
-    queryKey: ["queues", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${projectId}`);
-      return res.data?.data || [];
-    },
-  });
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   // 2. Pause / Resume mutation
   const togglePauseMutation = useMutation({
     mutationFn: async ({ id, isPaused }: { id: string; isPaused: boolean }) => {
-      const action = isPaused ? "resume" : "pause";
-      await api.patch(`/queues/${id}/${action}`);
+      await api.patch(`/queues/${id}`, { isPaused: !isPaused });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["queues"] });
+      void refetchQueues();
     },
   });
 
@@ -54,7 +31,7 @@ export const QueuesPage: React.FC = () => {
       await api.patch(`/queues/${id}`, { maxConcurrency });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["queues"] });
+      void refetchQueues();
     },
   });
 
@@ -65,13 +42,16 @@ export const QueuesPage: React.FC = () => {
         projectId,
         name: newQueueName,
         maxConcurrency: newConcurrency,
-        priority: 10,
       });
     },
     onSuccess: () => {
       setShowAddModal(false);
       setNewQueueName("");
-      queryClient.invalidateQueries({ queryKey: ["queues"] });
+      setQueueError(null);
+      void refetchQueues();
+    },
+    onError: (error: any) => {
+      setQueueError(error.response?.data?.error?.message || "Unable to create queue.");
     },
   });
 
@@ -95,7 +75,7 @@ export const QueuesPage: React.FC = () => {
       </div>
 
       {/* Loading Skeleton */}
-      {isLoading ? (
+      {queuesLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {[1, 2].map((i) => (
             <div key={i} className="h-44 bg-[#0b1120] border border-[#162033] rounded-xl animate-pulse" />
@@ -128,12 +108,12 @@ export const QueuesPage: React.FC = () => {
                     <span className="font-mono text-sm font-bold text-white">{queue.name}</span>
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
-                        queue.priority >= 15
+                        (queue.priority || 0) >= 15
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                           : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                       }`}
                     >
-                      {queue.priority >= 15 ? "HIGH PRIORITY" : "NORMAL"}
+                      {(queue.priority || 0) >= 15 ? "HIGH PRIORITY" : "NORMAL"}
                     </span>
                   </div>
 
@@ -232,6 +212,8 @@ export const QueuesPage: React.FC = () => {
         </div>
       )}
 
+      {queuesError && <p className="text-xs text-red-400">Queues could not be loaded: {queuesError}</p>}
+
       {/* Add Queue Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -246,6 +228,7 @@ export const QueuesPage: React.FC = () => {
                 onChange={(e) => setNewQueueName(e.target.value)}
                 className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
               />
+              {queueError && <p className="mt-1 text-[11px] text-red-400">{queueError}</p>}
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">Max Concurrency Slots</label>

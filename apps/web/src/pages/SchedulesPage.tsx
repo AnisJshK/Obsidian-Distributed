@@ -1,10 +1,11 @@
 // apps/web/src/pages/SchedulesPage.tsx
-import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { api, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import { Plus, RotateCw, X, AlertCircle, Loader2 } from "lucide-react";
 import { formatTimeAgo } from "../lib/utils";
+import { useData } from "../context/DataContext";
 
 interface ScheduleItem {
   id: string;
@@ -20,11 +21,6 @@ interface ScheduleItem {
   payload: Record<string, unknown>;
 }
 
-interface QueueOption {
-  id: string;
-  name: string;
-}
-
 const CRON_PRESETS = [
   { label: "Every minute", value: "* * * * *" },
   { label: "Every 5 minutes", value: "*/5 * * * *" },
@@ -33,9 +29,12 @@ const CRON_PRESETS = [
 ];
 
 export const SchedulesPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
-  const queryClient = useQueryClient();
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
+  const { queues } = useData();
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
@@ -48,26 +47,36 @@ export const SchedulesPage: React.FC = () => {
   const [payloadText, setPayloadText] = useState('{\n  "task": ""\n}');
   const [payloadError, setPayloadError] = useState<string | null>(null);
 
-  // Fetch queues for the dropdown (same pattern as JobsPage)
-  const { data: queues = [] } = useQuery<QueueOption[]>({
-    queryKey: ["queues-list", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${projectId}`);
-      return res.data?.data || [];
-    },
-  });
+  const refetch = async () => {
+    if (!projectId) return;
+    setIsFetching(true);
+    try {
+      const response = await api.get("/schedules");
+      setSchedules(unwrapApiList<ScheduleItem>(response, ["schedules"], "Schedules"));
+        if (!projectId) {
+          return;
+        }
+    } catch (error) {
+      console.error("[Schedules] Fetch failed:", error);
+      // Keep the last successful result visible while polling retries.
+    } finally {
+      setIsFetching(false);
+      setIsLoading(false);
+    }
+  };
 
-  // Fetch live recurring schedules
-  const { data: schedules = [], isLoading, isFetching, refetch } = useQuery<ScheduleItem[]>({
-    queryKey: ["schedules", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/schedules?projectId=${projectId}`);
-      return res.data?.data || [];
-    },
-    refetchInterval: 5000,
-  });
+  useEffect(() => {
+    if (!projectId) {
+      setSchedules([]);
+      setIsLoading(false);
+      return;
+    }
+    void refetch();
+    const interval = window.setInterval(() => void refetch(), 5000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [projectId]);
 
   const resetForm = () => {
     setName("");
@@ -89,7 +98,7 @@ export const SchedulesPage: React.FC = () => {
     onSuccess: () => {
       setShowAddModal(false);
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      void refetch();
     },
   });
 
@@ -98,7 +107,8 @@ export const SchedulesPage: React.FC = () => {
     try {
       payload = payloadText.trim() ? JSON.parse(payloadText) : {};
       setPayloadError(null);
-    } catch {
+    } catch (error) {
+      console.error("[Schedules] Payload parse failed:", error);
       setPayloadError("Payload must be valid JSON.");
       return;
     }

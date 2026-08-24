@@ -1,9 +1,8 @@
 // apps/web/src/pages/DashboardPage.tsx
-import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { api, getApiErrorMessage, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import { 
   Layers, 
   Zap, 
@@ -17,18 +16,7 @@ import {
 } from "lucide-react";
 import { formatTimeAgo } from "../lib/utils";
 import { resolveJobName } from "../lib/utils";
-
-interface QueueSummary {
-  id: string;
-  name: string;
-  maxConcurrency: number;
-  stats?: {
-    queued: number;
-    running: number;
-    completed: number;
-    dlq: number;
-  };
-}
+import { useData } from "../context/DataContext";
 
 interface RecentJob {
   id: string;
@@ -42,47 +30,42 @@ interface RecentJob {
   claimedById: string | null;
 }
 
-interface WorkerSummary {
-  id: string;
-  status: string;
-}
-
 export const DashboardPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
+  const { queues, workers, refreshAll, queuesError, workersError } = useData();
+  const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [jobsError, setJobsError] = useState<string | null>(null);
 
-  // 1. Fetch Queues and their Stats
-  const { data: queues = [], refetch: refetchQueues } = useQuery<QueueSummary[]>({
-    queryKey: ["dashboard-queues", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${projectId}`);
-      return res.data?.data || [];
-    },
-    refetchInterval: 3000,
-  });
+  const loadDashboard = async () => {
+    if (!projectId) {
+      return;
+    }
+    setIsFetching(true);
+    try {
+      const jobsResponse = await api.get(`/v1/jobs?projectId=${projectId}&limit=10`);
+      setRecentJobs(unwrapApiList<RecentJob>(jobsResponse, ["jobs"], "Dashboard/Jobs"));
+      setJobsError(null);
+    } catch (error) {
+      console.error("[Dashboard/Jobs] Fetch failed:", error);
+      setJobsError(getApiErrorMessage(error));
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
-  // 2. Fetch Recent Jobs
-  const { data: recentJobs = [], refetch: refetchJobs, isFetching } = useQuery<RecentJob[]>({
-    queryKey: ["dashboard-recent-jobs", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/jobs?projectId=${projectId}&limit=10`);
-      return res.data?.data || [];
-    },
-    refetchInterval: 3000,
-  });
-
-  // 3. Fetch Worker Fleet
-  const { data: workers = [] } = useQuery<WorkerSummary[]>({
-    queryKey: ["dashboard-workers"],
-    enabled: !!session,
-    queryFn: async () => {
-      const res = await api.get("/workers");
-      return res.data?.data || [];
-    },
-    refetchInterval: 3000,
-  });
+  useEffect(() => {
+    void loadDashboard();
+    const interval = window.setInterval(() => void loadDashboard(), 3000);
+    window.addEventListener("jobs-updated", loadDashboard);
+    window.addEventListener("queues-updated", loadDashboard);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("jobs-updated", loadDashboard);
+      window.removeEventListener("queues-updated", loadDashboard);
+    };
+  }, [projectId]);
 
   // Aggregate Metrics Across Queues
   const totalQueued = queues.reduce((acc, q) => acc + (q.stats?.queued || 0), 0);
@@ -125,8 +108,8 @@ export const DashboardPage: React.FC = () => {
         </div>
         <button
           onClick={() => {
-            refetchQueues();
-            refetchJobs();
+            void refreshAll();
+            void loadDashboard();
           }}
           className="flex items-center gap-2 bg-[#0d1527] border border-[#1a253c] hover:border-slate-600 text-slate-300 text-xs font-semibold px-3 py-2 rounded-lg transition"
         >
@@ -134,6 +117,20 @@ export const DashboardPage: React.FC = () => {
           Refresh
         </button>
       </div>
+
+      {jobsError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <AlertOctagon className="h-4 w-4 shrink-0" />
+          <span>Jobs could not be loaded: {jobsError}</span>
+        </div>
+      )}
+
+      {(queuesError || workersError) && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          {queuesError && <p>Queues could not be loaded: {queuesError}</p>}
+          {workersError && <p>Workers could not be loaded: {workersError}</p>}
+        </div>
+      )}
 
       {/* Top Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

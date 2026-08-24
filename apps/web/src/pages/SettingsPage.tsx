@@ -1,8 +1,8 @@
 // apps/web/src/pages/SettingsPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { api, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import { Key, Plus, Copy, Check, Shield, Trash2 } from "lucide-react";
 
 interface ApiKeyItem {
@@ -14,8 +14,8 @@ interface ApiKeyItem {
 }
 
 export const SettingsPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
   const queryClient = useQueryClient();
   const [newKeyName, setNewKeyName] = useState("");
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
@@ -27,15 +27,15 @@ export const SettingsPage: React.FC = () => {
     queryKey: ["api-keys", projectId],
     enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get("/auth/keys");
-      return res.data?.data || [];
+      const res = await api.get("/keys");
+      return unwrapApiList<ApiKeyItem>(res, ["keys"], "Settings/Keys");
     },
   });
 
   // 2. Generate API Key Mutation
   const generateKeyMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post("/auth/keys", {
+      const res = await api.post("/keys", {
         projectId,
         name: newKeyName,
         expiresInDays: 90,
@@ -52,7 +52,7 @@ export const SettingsPage: React.FC = () => {
   // 3. Delete / Revoke API Key Mutation
   const revokeKeyMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/auth/keys/${id}`);
+      await api.delete(`/keys/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["api-keys"] });

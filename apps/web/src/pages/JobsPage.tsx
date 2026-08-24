@@ -1,8 +1,7 @@
 // apps/web/src/pages/JobsPage.tsx
-import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState } from "react";
+import { api, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import {
   Search,
   RotateCw,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import { NewJobModal } from "../components/NewJobModal";
 import { resolveJobName } from "../lib/utils";
+import { useData } from "../context/DataContext";
 
 interface JobItem {
   id: string;
@@ -24,7 +24,7 @@ interface JobItem {
     id: string;
     name: string;
   };
-  status: "QUEUED" | "CLAIMED" | "RUNNING" | "COMPLETED" | "DLQ";
+  status: "QUEUED" | "CLAIMED" | "RUNNING" | "COMPLETED" | "FAILED" | "DLQ";
   priority: number;
   retryCount: number;
   maxRetries: number;
@@ -44,12 +44,17 @@ const STATUS_TABS = [
   "CLAIMED",
   "RUNNING",
   "COMPLETED",
+  "FAILED",
   "DLQ",
 ] as const;
 
 export const JobsPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
+  const { queues } = useData();
+  const [jobs, setJobs] = useState<JobItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedQueue, setSelectedQueue] = useState<string>("ALL");
@@ -57,36 +62,36 @@ export const JobsPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isNewJobOpen, setIsNewJobOpen] = useState(false);
 
-  // 1. Fetch available queues for filter dropdown
-  const { data: queues = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["queues-list", projectId],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const res = await api.get(`/queues?projectId=${projectId}`);
-      return res.data?.data || [];
-    },
-  });
+  const refetch = async () => {
+    if (!projectId) return;
+    setIsFetching(true);
+    try {
+      const params = new URLSearchParams({ projectId, limit: "200" });
+      if (selectedStatus !== "ALL") params.set("status", selectedStatus);
+      if (selectedQueue !== "ALL") params.set("queueName", selectedQueue);
+      const response = await api.get(`/v1/jobs?${params.toString()}`);
+      setJobs(unwrapApiList<JobItem>(response, ["jobs"], "Jobs"));
+    } catch (error) {
+      console.error("[Jobs] Fetch failed:", error);
+      // Keep the last successful result visible while polling retries.
+    } finally {
+      setIsFetching(false);
+      setIsLoading(false);
+    }
+  };
 
-  // 2. Fetch live jobs with periodic refetch
-  const {
-    data: jobs = [],
-    isLoading,
-    isFetching,
-    refetch,
-  } = useQuery<JobItem[]>({
-    queryKey: ["jobs-explorer", projectId, selectedStatus, selectedQueue],
-    enabled: !!projectId,
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.append("projectId", projectId!);
-      if (selectedStatus !== "ALL") params.append("status", selectedStatus);
-      if (selectedQueue !== "ALL") params.append("queueName", selectedQueue);
-
-      const res = await api.get(`/jobs?${params.toString()}`);
-      return res.data?.data || [];
-    },
-    refetchInterval: 3000,
-  });
+  useEffect(() => {
+    if (!projectId) {
+      setJobs([]);
+      setIsLoading(false);
+      return;
+    }
+    void refetch();
+    const interval = window.setInterval(() => void refetch(), 3000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [projectId, selectedStatus, selectedQueue]);
 
   // 3. Client-side search filtering (by Job ID or payload content)
   const filteredJobs = jobs.filter((job) => {
@@ -152,6 +157,12 @@ export const JobsPage: React.FC = () => {
         return (
           <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
             FAILED (DLQ)
+          </span>
+        );
+      case "FAILED":
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+            FAILED
           </span>
         );
       default:

@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { X, Loader2, AlertCircle, Sparkles } from "lucide-react";
 import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { useProject } from "../context/ProjectContext";
 
 interface QueueOption {
   id: string;
@@ -62,9 +62,8 @@ const getPriorityLabel = (priority: number) => {
 };
 
 export const NewJobModal: React.FC<NewJobModalProps> = ({ queues, onClose }) => {
-  const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const projectId = session?.projectId;
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
 
   const [queueName, setQueueName] = useState(queues[0]?.name || "default");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("send-email");
@@ -98,11 +97,11 @@ export const NewJobModal: React.FC<NewJobModalProps> = ({ queues, onClose }) => 
 
   const createJobMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
-      const res = await api.post("/jobs", body);
+      const res = await api.post("/v1/jobs", body);
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs-explorer"] });
+      window.dispatchEvent(new Event("jobs-updated"));
       onClose();
     },
   });
@@ -112,7 +111,8 @@ export const NewJobModal: React.FC<NewJobModalProps> = ({ queues, onClose }) => 
     try {
       payload = payloadText.trim() ? JSON.parse(payloadText) : {};
       setPayloadError(null);
-    } catch {
+    } catch (error) {
+      console.error("[Jobs/Payload] JSON parse failed:", error);
       setPayloadError("Payload must be valid JSON.");
       return;
     }

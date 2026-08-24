@@ -12,19 +12,37 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AuthPage } from "./pages/AuthPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { DataProvider } from "./context/DataContext";
+import { ProjectProvider } from "./context/ProjectProvider";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchInterval: 3000, // Live poll backend every 3s
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      retry: 3,
       staleTime: 1000,
     },
   },
 });
 
 function ProtectedRoutes() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
+  // While verifying session, show loading screen
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#050811] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border border-slate-600 border-t-blue-500 mx-auto mb-4" />
+          <p className="text-slate-400 text-sm">Verifying session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Allow access if EITHER user session OR API key is valid
   if (!isAuthenticated) {
     return <Navigate to="/auth" replace />;
   }
@@ -49,14 +67,19 @@ function ProtectedRoutes() {
 export function App() {
   return (
     <AuthProvider>
+      <ProjectProvider>
+
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<AuthPage />} />
-            <Route path="*" element={<ProtectedRoutes />} />
-          </Routes>
-        </BrowserRouter>
+        <DataProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<AuthPage />} />
+              <Route path="*" element={<ProtectedRoutes />} />
+            </Routes>
+          </BrowserRouter>
+        </DataProvider>
       </QueryClientProvider>
+      </ProjectProvider>
     </AuthProvider>
   );
 }

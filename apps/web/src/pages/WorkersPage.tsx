@@ -1,7 +1,7 @@
 // apps/web/src/pages/WorkersPage.tsx
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { api, unwrapApiList } from "../lib/api";
 import { Server, RotateCw, ShieldCheck, Activity } from "lucide-react";
 import { formatTimeAgo } from "../lib/utils";
 
@@ -20,8 +20,8 @@ export const WorkersPage: React.FC = () => {
   const { data: workers = [], isLoading, isFetching, refetch } = useQuery<WorkerNode[]>({
     queryKey: ["workers-fleet"],
     queryFn: async () => {
-      const res = await api.get("/workers");
-      return res.data?.data || [];
+      const res = await api.get("/v1/worker");
+      return unwrapApiList<WorkerNode>(res, ["workers"], "Workers");
     },
     refetchInterval: 3000,
   });

@@ -16,11 +16,13 @@ import {
   LogOut
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { useProject } from "../../context/ProjectContext";
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
-  const { session, logout } = useAuth() as any;
-  const projectId = session?.projectId || "";
+  const { logout } = useAuth();
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id || "";
 
   // State Management
   const [env, setEnv] = useState<"Production" | "Staging" | "Dev">("Production");

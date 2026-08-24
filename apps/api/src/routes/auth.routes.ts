@@ -1,13 +1,17 @@
 // apps/api/src/routes/auth.routes.ts
 import { Router, Request, Response, NextFunction } from "express";
+import { hashPassword, verifyPassword } from "../lib/password"; // new small file, Bun.password wrapper
+import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "@scheduler/database";
 import { validate } from "../middleware/validate.middleware";
 import {
   AuthenticatedRequest,
   requireApiKey,
+  requireUser,
 } from "../middleware/auth.middleware";
 import { randomBytes, createHash } from "node:crypto";
+import { UserScalarFieldEnum } from "../../../../packages/database/src/generated/internal/prismaNamespace";
 
 const CreateApiKeySchema = z.object({
   projectId: z.string().uuid(),
@@ -34,15 +38,57 @@ function generateApiKey() {
   return { apiKey, prefix, keyHash };
 }
 
-// ----------------------------------------------------
-// 1. POST /api/auth/register-project - Onboard New Workspace
-// ----------------------------------------------------
+const RegisterUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  name: z.string().min(1).max(100),
+});
+const LoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
+
+function issueSession(res: Response, userId: string) {
+  const token = jwt.sign({ sub: userId }, process.env.JWT_SECRET!, { expiresIn: "7d" });
+  res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 7 * 86400000 });
+}
+
+authRouter.post("/register", validate(RegisterUserSchema), async (req, res, next) => {
+  try {
+    const { email, password, name } = req.body;
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ success: false, error: { code: "EMAIL_TAKEN", message: "Email already registered." } });
+    }
+    const passwordHash = await hashPassword(password);
+    const user = await prisma.user.create({ data: { email, passwordHash, name } });
+    issueSession(res, user.id);
+    res.status(201).json({ success: true, data: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  } catch (error) { next(error); }
+});
+
+authRouter.post("/login", validate(LoginSchema), async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      return res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Invalid credentials." } });
+    }
+    issueSession(res, user.id);
+    res.json({ success: true, data: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  } catch (error) { next(error); }
+});
+
+
+
 authRouter.post(
   "/register-project",
+  requireUser,
   validate(RegisterProjectSchema),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const { projectName } = req.body;
+      const ownerId = req.user!.id;
       const { apiKey, prefix, keyHash } = generateApiKey();
       const trimmedName = projectName.trim();
       const generatedSlug = `${trimmedName
@@ -69,7 +115,7 @@ authRouter.post(
           data: {
             name: trimmedName,
             slug: generatedSlug,
-            ownerId: owner.id, // or owner: { connect: { id: owner.id } }
+            ownerId: ownerId, // or owner: { connect: { id: owner.id } }
           },
         });
 
@@ -152,27 +198,30 @@ authRouter.post(
   },
 );
 
-// ----------------------------------------------------
-// 3. GET /api/auth/projects - List projects (for bootstrapping)
-// ----------------------------------------------------
+// apps/api/src/routes/auth.routes.ts
+
+authRouter.post("/logout", (_req: Request, res: Response) => {
+  res.clearCookie("session", { httpOnly: true, sameSite: "lax" });
+  res.json({ success: true, message: "Logged out." });
+});
+
+// GET /api/auth/me — Verify current user session is valid
 authRouter.get(
-  "/projects",
-  async (_req: Request, res: Response, next: NextFunction) => {
-    try {
-      const projects = await prisma.project.findMany({
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      });
-      res.json({ success: true, data: projects });
-    } catch (error) {
-      next(error);
-    }
+  "/me",
+  requireUser,
+  (req: AuthenticatedRequest, res: Response) => {
+    res.json({
+      success: true,
+      data: {
+        id: req.user!.id,
+        email: req.user!.email,
+        name: req.user!.name,
+        role: req.user!.role,
+      },
+    });
   },
 );
 
-// ----------------------------------------------------
-// 4. GET /api/auth/session - Session Check
-// ----------------------------------------------------
 authRouter.get(
   "/session",
   requireApiKey,
@@ -181,116 +230,3 @@ authRouter.get(
   },
 );
 
-// ----------------------------------------------------
-// 5. GET /api/auth/keys - List API Keys (Project Scoped)
-// ----------------------------------------------------
-authRouter.get(
-  "/keys",
-  requireApiKey,
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      const projectId = req.project!.id;
-
-      const keys = await prisma.apiKey.findMany({
-        where: { projectId },
-        select: {
-          id: true,
-          name: true,
-          prefix: true,
-          createdAt: true,
-          expiresAt: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      res.json({ success: true, data: keys });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-// ----------------------------------------------------
-// 6. POST /api/auth/keys - Generate a New Scoped Key
-// ----------------------------------------------------
-// apps/api/src/routes/auth.routes.ts
-
-// REMOVE or comment out public project listing:
-// authRouter.get("/projects", ...);
-
-// Protect standalone key creation with existing authentication:
-authRouter.post(
-  "/keys",
-  requireApiKey,
-  validate(CreateApiKeySchema),
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      const projectId = req.project!.id; // Derived from authenticated tenant
-      const { name, expiresInDays } = req.body;
-
-      const { apiKey, prefix, keyHash } = generateApiKey();
-
-      let expiresAt: Date | null = null;
-      if (expiresInDays) {
-        expiresAt = new Date(Date.now() + expiresInDays * 86400000);
-      }
-
-      const createdKey = await prisma.apiKey.create({
-        data: {
-          projectId,
-          name,
-          prefix,
-          keyHash,
-          expiresAt,
-        },
-      });
-
-      res.status(201).json({
-        success: true,
-        data: {
-          id: createdKey.id,
-          name: createdKey.name,
-          prefix: createdKey.prefix,
-          apiKey,
-          expiresAt: createdKey.expiresAt,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// ----------------------------------------------------
-// 7. DELETE /api/auth/keys/:id - Safely Revoke Key (Scoped)
-// ----------------------------------------------------
-authRouter.delete(
-  "/keys/:id",
-  requireApiKey,
-  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      const { id } = req.params;
-      const projectId = req.project!.id;
-
-      // Verify key belongs to the authenticated project before deleting
-      const existing = await prisma.apiKey.findFirst({
-        where: { id, projectId },
-      });
-
-      if (!existing) {
-        return res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: "API Key not found or does not belong to this project.",
-          },
-        });
-      }
-
-      await prisma.apiKey.delete({ where: { id } });
-      res.json({ success: true, message: "API Key revoked successfully" });
-    } catch (error) {
-      next(error);
-    }
-  },
-);

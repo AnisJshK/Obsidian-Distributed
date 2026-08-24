@@ -1,8 +1,8 @@
 // apps/web/src/pages/WorkflowsPage.tsx
 import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { api, unwrapApiData, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import { 
   GitBranch, 
   RotateCw, 
@@ -48,16 +48,16 @@ interface WorkflowBatchSummary {
 }
 
 export const WorkflowsPage: React.FC = () => {
-  const { session } = useAuth();
+  const { activeProject } = useProject();
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<WorkflowJobNode | null>(null);
 
   const { data: batches = [] } = useQuery<WorkflowBatchSummary[]>({
-    queryKey: ["workflow-batches", session?.projectId],
-    enabled: !!session?.projectId,
+    queryKey: ["workflow-batches", activeProject?.id],
+    enabled: !!activeProject?.id,
     queryFn: async () => {
       const res = await api.get("/workflows");
-      return res.data?.data || [];
+      return unwrapApiList<WorkflowBatchSummary>(res, ["workflows", "batches"], "Workflows");
     },
   });
 
@@ -68,10 +68,11 @@ export const WorkflowsPage: React.FC = () => {
   // Fetch Workflow Batch Details
   const { data: batch, refetch, isFetching } = useQuery<WorkflowBatch>({
     queryKey: ["workflow-batch", activeBatchId],
-    enabled: !!activeBatchId,
+    enabled: !!activeProject?.id && !!activeBatchId,
     queryFn: async () => {
+      if (!activeBatchId) throw new Error("Workflow batch ID is not initialized.");
       const res = await api.get(`/workflows/${activeBatchId!}`);
-      return res.data?.data;
+      return unwrapApiData<WorkflowBatch>(res, ["workflow", "batch"], "Workflow/Details");
     },
     refetchInterval: 2500,
   });
@@ -89,7 +90,7 @@ export const WorkflowsPage: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => refetch()}
+          onClick={() => { if (activeBatchId) refetch(); }}
           className="flex items-center gap-2 bg-[#0d1527] border border-[#1a253c] hover:border-slate-600 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
         >
           <RotateCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin text-blue-400" : ""}`} />

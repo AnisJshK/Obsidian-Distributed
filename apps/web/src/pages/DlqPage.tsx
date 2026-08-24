@@ -1,8 +1,8 @@
 // apps/web/src/pages/DlqPage.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../context/AuthContext";
+import { api, unwrapApiList } from "../lib/api";
+import { useProject } from "../context/ProjectContext";
 import { 
   AlertOctagon, 
   RotateCw, 
@@ -23,8 +23,8 @@ interface DlqJob {
 }
 
 export const DlqPage: React.FC = () => {
-  const { session } = useAuth();
-  const projectId = session?.projectId;
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
   const queryClient = useQueryClient();
   const [selectedSignature, setSelectedSignature] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<DlqJob | null>(null);
@@ -35,8 +35,8 @@ export const DlqPage: React.FC = () => {
     queryKey: ["dlq-jobs", projectId],
     enabled: !!projectId,
     queryFn: async () => {
-      const res = await api.get(`/dlq?projectId=${projectId}`);
-      return res.data?.data || [];
+      const res = await api.get("/dlq");
+      return unwrapApiList<DlqJob>(res, ["jobs", "dlq"], "DLQ");
     },
     refetchInterval: 3000,
   });
@@ -61,7 +61,7 @@ export const DlqPage: React.FC = () => {
   // 2. Retry Single Job Mutation
   const retryJobMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.post(`/dlq/${id}/retry`);
+      await api.post(`/dlq/${id}/replay`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dlq-jobs"] });
@@ -73,7 +73,7 @@ export const DlqPage: React.FC = () => {
   // 3. Retry All Jobs in DLQ
   const retryAllMutation = useMutation({
     mutationFn: async () => {
-      await api.post("/dlq/retry-all", { projectId });
+      await Promise.all(dlqJobs.map((job) => api.post(`/dlq/${job.id}/replay`)));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dlq-jobs"] });
