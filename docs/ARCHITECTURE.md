@@ -1,100 +1,126 @@
-# System Architecture & Concurrency Model
+# Obsidian Distributed
 
-Obsidian Distributed is designed as a **decoupled, multi-tenant distributed job scheduling platform**.
+High-performance, multi-tenant distributed background job orchestrator, workflow DAG engine, and precision scheduler built with TypeScript and PostgreSQL.
 
-The architecture separates the stateless API layer, distributed worker cluster, and observability dashboard while using PostgreSQL as the central system of record and coordination layer.
-
-The API and worker services can scale independently, while the monorepo provides a unified local development workflow through the root `package.json`.
+Obsidian Distributed is designed as a production-inspired distributed job scheduling platform. It separates the API, worker, database, and observability dashboard into independent monorepo workspaces while using PostgreSQL for durable job state, queue coordination, scheduling coordination, and concurrency control.
 
 ---
 
-## Architecture Principles
+## Documentation
 
-* **Stateless API layer** — API instances can scale horizontally without maintaining local job state.
-* **Distributed workers** — Multiple worker nodes can process jobs concurrently.
-* **Centralized PostgreSQL state** — Projects, queues, jobs, schedules, execution history, and worker state are persisted centrally.
-* **Atomic job claiming** — `SELECT ... FOR UPDATE SKIP LOCKED` prevents multiple workers from claiming the same job.
-* **Distributed coordination** — PostgreSQL advisory locks coordinate operations that must only execute once across worker nodes.
-* **Multi-tenancy** — Projects provide isolation between users and their queues, jobs, schedules, and API credentials.
-* **DAG workflows** — Jobs can depend on other jobs and are automatically unblocked when their dependencies complete.
-* **Dead-letter handling** — Jobs that exhaust their retry policy are isolated in the Dead Letter Queue.
-* **Independent services** — API, worker, and web applications remain independently runnable while sharing the same monorepo.
-* **Unified development workflow** — The root `bun run dev` command starts the primary development services concurrently.
+- [Architecture & Concurrency Model](./docs/ARCHITECTURE.md)
+- [Database Schema & ER Diagram](./docs/DATABASE_SCHEMA.md)
+- [REST API Reference](./docs/API_REFERENCE.md)
+- [Design Decisions & Architecture Trade-offs](./DESIGN_DECISIONS.md)
+- [Automated DAG Test Suite](./scripts/test-dag.ts)
 
 ---
 
-# High-Level Architecture
+## Overview
 
-```mermaid
-flowchart TB
+**Obsidian Distributed** is a distributed task orchestration platform focused on concurrency, resilience, scheduling, workflow execution, and operational visibility.
 
-    subgraph Clients["Client & User Layer"]
-        UI["React Observability Dashboard<br/>(TanStack Query / Tailwind)"]
-        SDK["External Services / REST Clients<br/>(cURL / Microservices)"]
-    end
+The platform uses PostgreSQL locking primitives to coordinate concurrent workers without requiring an external message broker such as Redis or RabbitMQ. Jobs are persisted in PostgreSQL, workers claim available work safely, and retry/exhaustion handling determines whether failed jobs return to the queue or enter the Dead Letter Queue (DLQ).
 
-    subgraph API["Stateless API Layer<br/>(Express + TypeScript)"]
-        Auth["API Key Authentication<br/>(SHA-256 Hashing & Project Scoping)"]
-        Validation["Zod Request Validation"]
-        Routes["REST Controllers<br/>(Jobs / Schedules / Queues)"]
-    end
+The platform also provides:
 
-    subgraph DB["Primary Data Store<br/>(PostgreSQL / Neon)"]
-        Jobs[("Job Queue<br/>(status, runAt, priority)")]
-        Locks[("PostgreSQL Advisory Locks<br/>(Cron Coordination)")]
-        Tenants[("Projects / Queues<br/>API Keys")]
-        DLQ[("Dead Letter Queue<br/>(Errors & Stack Traces)")]
-    end
+- Multi-tenant project isolation
+- API-key-based access for application/job clients
+- User authentication and project management
+- Queue configuration and management
+- Immediate, batch, delayed, and scheduled job execution
+- Recurring schedules
+- DAG-style workflows
+- Retry policies and DLQ handling
+- Worker coordination
+- A React observability dashboard
 
-    subgraph Workers["Distributed Worker Cluster<br/>(Bun / Node.js)"]
-        W1["Worker Node 01<br/>Claim Loop"]
-        W2["Worker Node 02<br/>Claim Loop"]
-        DAG["DAG Dependency Resolver<br/>(Cascade Unblocker)"]
-        Heartbeat["Heartbeat & Health Loop"]
-    end
+---
 
-    UI -->|"HTTP / API Key"| Auth
-    SDK -->|"HTTP / API Key"| Auth
+## Key Features
 
-    Auth --> Validation
-    Validation --> Routes
+- **Atomic Job Claiming** — PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` enables multiple workers to claim independent jobs concurrently without processing the same job simultaneously.
 
-    Routes -->|"Read / Write"| DB
+- **DAG Workflow Engine** — Supports multi-stage job dependency graphs with parent/child tracking, dependency resolution, cascade unblocking, and failure propagation.
 
-    W1 -->|"FOR UPDATE SKIP LOCKED"| Jobs
-    W2 -->|"FOR UPDATE SKIP LOCKED"| Jobs
+- **Distributed Scheduling** — PostgreSQL advisory locks coordinate recurring schedule execution so multiple worker instances can participate without executing the same schedule concurrently.
 
-    W1 -->|"pg_try_advisory_xact_lock"| Locks
-    W2 -->|"pg_try_advisory_xact_lock"| Locks
+- **Fault Tolerance & DLQ** — Configurable retry behavior supports Fixed, Linear, and Exponential Backoff with Jitter, with exhausted jobs isolated in the Dead Letter Queue.
 
-    W1 -->|"Job Completed"| DAG
-    W2 -->|"Job Completed"| DAG
+- **Multi-Tenant Security** — API keys are hashed with SHA-256 and scoped to projects, providing project-level access boundaries for queues, jobs, schedules, and workflows.
 
-    DAG -->|"Unblock Children"| Jobs
+- **Live Observability Console** — React-based dashboard for inspecting jobs, execution history, failures, queues, schedules, and worker activity.
 
-    W1 -->|"Retries Exhausted"| DLQ
-    W2 -->|"Retries Exhausted"| DLQ
+- **Horizontal Worker Scaling** — Multiple worker instances can process the same queues concurrently using PostgreSQL locking primitives.
 
-    W1 -->|"Every 10s"| Heartbeat
-    W2 -->|"Every 10s"| Heartbeat
+- **Monorepo Development Workflow** — API, worker, and web processes can be started together from the repository root with `bun run dev`.
+
+---
+
+## Architecture
+
+```text
+                         ┌──────────────────────────────────────┐
+                         │     React Observability Dashboard    │
+                         └──────────────────┬───────────────────┘
+                                            │
+                                      HTTP / API Key
+                                            │
+                                            ▼
+                         ┌──────────────────────────────────────┐
+                         │            Express REST API           │
+                         │                                        │
+                         │ Authentication / Projects / Keys      │
+                         │ Queues / Jobs / Workflows / Schedules │
+                         │ DLQ / Worker API                      │
+                         └──────────────────┬───────────────────┘
+                                            │
+                                            ▼
+                  ┌──────────────────────────────────────────────────┐
+                  │                    PostgreSQL                     │
+                  │                                                  │
+                  │  Durable Job State     Queue State              │
+                  │  Execution History     Project / API Key Data   │
+                  │  Workflow State        Schedule State            │
+                  │  DLQ State             Advisory Locks            │
+                  │                                                  │
+                  │  SELECT ... FOR UPDATE SKIP LOCKED               │
+                  └──────────────────┬───────────────────────────────┘
+                                     │
+                         ┌───────────┴───────────┐
+                         │ Distributed Workers   │
+                         │                       │
+                         │ Worker Node 01        │
+                         │ Worker Node 02        │
+                         │ Worker Node N         │
+                         └───────────────────────┘
 ```
 
+The major runtime responsibilities are separated:
+
+| Component | Responsibility |
+|---|---|
+| **API** | Authentication, project management, API keys, queues, jobs, workflows, schedules, DLQ operations, and worker-facing endpoints |
+| **Worker** | Claims and executes jobs, processes workflow dependencies, handles retries, and participates in scheduling |
+| **Database** | Durable state, transactional coordination, locking, execution history, project isolation, and scheduling coordination |
+| **Web** | Observability and operational UI for the platform |
+
+For a detailed explanation of concurrency, worker coordination, DAG execution, and scheduling, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+
 ---
 
-# Monorepo Service Architecture
-
-The project is organized as a workspace-based monorepo.
+## Monorepo Structure
 
 ```text
 distributed-job-scheduler/
 │
 ├── apps/
-│   ├── api/                 # Express REST API
-│   ├── worker/              # Distributed job worker
-│   └── web/                 # React observability dashboard
+│   ├── api/                    # Express REST API
+│   ├── worker/                 # Distributed job worker
+│   └── web/                    # React observability dashboard
 │
 ├── packages/
-│   └── database/            # Database client, schema & migrations
+│   └── database/               # Database schema, client & migrations
 │
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -109,614 +135,743 @@ distributed-job-scheduler/
 └── README.md
 ```
 
-The services are independently runnable:
+The repository is a manually structured Bun monorepo rather than a Turborepo. The root workspace configuration includes:
 
-```text
-@scheduler/api
-@scheduler/worker
-@scheduler/web
-@scheduler/ws
-@scheduler/database
+```json
+{
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}
 ```
-
-The root `package.json` provides convenient commands for running these workspace applications.
 
 ---
 
-# Local Development Architecture
+# Getting Started
 
-The root development command starts the primary services concurrently:
+## Prerequisites
+
+Make sure the following are installed:
+
+- [Bun](https://bun.sh/)
+- PostgreSQL or a hosted PostgreSQL provider such as Neon
+- Git
+
+Verify Bun:
+
+```bash
+bun --version
+```
+
+---
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/AnisJshK/Obsidian-Distributed.git
+cd distributed-job-scheduler
+```
+
+---
+
+## 2. Install Dependencies
+
+Install all workspace dependencies from the monorepo root:
+
+```bash
+bun install
+```
+
+Bun installs dependencies for the root project and its configured workspaces.
+
+---
+
+## 3. Configure Environment Variables
+
+The application uses environment variables for API communication and database connectivity.
+
+### Root `.env`
+
+The web application and API clients use the API base URL. API keys should be supplied through the appropriate local development configuration rather than committed to source control.
+
+Example:
+
+```env
+API_URL="http://localhost:4000/api"
+API_KEY="<development-api-key>"
+```
+
+### Database `.env`
+
+The database workspace requires a PostgreSQL connection string:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/obsidian_dev?sslmode=disable"
+```
+
+Do not commit real credentials or API keys to the repository.
+
+---
+
+## 4. Generate the Database Client
+
+From the repository root:
+
+```bash
+bun run db:generate
+```
+
+This executes the database workspace's generation script.
+
+---
+
+## 5. Run Database Migrations
+
+```bash
+bun run db:migrate
+```
+
+This applies the required database migrations through the shared database workspace.
+
+---
+
+## 6. Seed the Database
+
+If development seed data is required:
+
+```bash
+bun run db:seed
+```
+
+---
+
+# Running the Platform
+
+The complete development environment can be started from the repository root:
 
 ```bash
 bun run dev
 ```
 
-The current root script launches:
+The root development command starts the primary application processes concurrently:
 
 ```text
-┌─────────────────────────────────────────────┐
-│              bun run dev                    │
-└─────────────────────┬───────────────────────┘
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-        API         WORKER        WEB
-         │            │            │
-         ▼            ▼            ▼
-    Express API   Job Workers   React UI
+                    bun run dev
+                         │
+             ┌───────────┼───────────┐
+             ▼           ▼           ▼
+            API        WORKER        WEB
+             │           │           │
+             ▼           ▼           ▼
+       Express API   Job Engine   React UI
 ```
 
-The command is implemented using `concurrently`:
+The processes are labelled separately in the terminal:
 
-```json
-{
-  "scripts": {
-    "dev": "concurrently -n \"API,WORKER,WEB\" -c \"blue,green,magenta\" \"bun run dev:api\" \"bun run dev:worker\" \"bun run dev:web\""
-  }
-}
+```text
+[API]     ...
+[WORKER]  ...
+[WEB]     ...
 ```
 
-This provides a single development entry point while keeping each service independently executable.
+This allows the complete local platform to be started with a single command.
 
-### Individual Services
+---
 
-The services can still be started independently:
+## Running Services Individually
+
+Each primary service can also be started independently.
+
+### API
 
 ```bash
 bun run dev:api
-bun run dev:worker
-bun run dev:web
-bun run dev:ws
 ```
 
-This is useful when debugging or developing a specific part of the system.
+### Worker
 
-> **Note:** `dev:ws` exists as a separate workspace command but is not currently included in the root `bun run dev` command. If the WebSocket service becomes a required runtime dependency, it can be added to the root process group.
+```bash
+bun run dev:worker
+```
 
----
+### Web Dashboard
 
-# 1. Client & User Layer
+```bash
+bun run dev:web
+```
 
-The client layer consists of the React observability dashboard and external API consumers.
-
-## Observability Dashboard
-
-The React dashboard provides visibility into:
-
-* Projects
-* Queues
-* Jobs
-* Job execution status
-* Retry attempts
-* Scheduled jobs
-* Failed jobs
-* Dead-letter queue entries
-* Worker health
-
-The dashboard communicates with the REST API using authenticated HTTP requests.
-
-## External Clients
-
-External applications can interact with Obsidian Distributed through the REST API.
-
-Typical clients include:
-
-* Microservices
-* Backend applications
-* CLI tools
-* cURL
-* Internal infrastructure
-
-Authentication is performed using project API keys.
+Run an individual service when debugging or developing a specific part of the platform.
 
 ---
 
-# 2. Stateless API Layer
+## Root Development Scripts
 
-The API layer is implemented using **Express + TypeScript**.
+| Command | Description |
+|---|---|
+| `bun run dev` | Start API, worker, and web dashboard concurrently |
+| `bun run dev:api` | Start only the REST API |
+| `bun run dev:worker` | Start only the distributed worker |
+| `bun run dev:web` | Start only the React dashboard |
+| `bun run db:generate` | Generate the database client |
+| `bun run db:migrate` | Run database migrations |
+| `bun run db:seed` | Seed the development database |
 
-The API does not execute background jobs itself. Instead, it validates requests and persists job instructions into PostgreSQL for workers to process asynchronously.
+---
 
-## Request Pipeline
+## Development Process Model
+
+The root development command uses `concurrently` to orchestrate the application processes:
+
+```text
+                         Root package.json
+                                │
+                         bun run dev
+                                │
+                ┌───────────────┼───────────────┐
+                │               │               │
+                ▼               ▼               ▼
+             dev:api        dev:worker        dev:web
+                │               │               │
+                ▼               ▼               ▼
+          @scheduler/api  @scheduler/worker  @scheduler/web
+```
+
+Each service remains independently runnable while sharing a convenient development entry point.
+
+---
+
+# API Overview
+
+The API is organized by responsibility and authentication boundary.
+
+## Authentication
+
+Base path:
+
+```text
+/api/auth
+```
+
+| Method | Endpoint | Authentication | Purpose |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Public | Register a user |
+| `POST` | `/api/auth/login` | Public | Authenticate a user |
+| `POST` | `/api/auth/register-project` | User session | Create/register a project |
+| `POST` | `/api/auth/verify` | Public | Verify an API key or verification payload |
+| `GET` | `/api/auth/me` | User session | Retrieve the authenticated user |
+| `POST` | `/api/auth/logout` | User/session | Clear the session cookie |
+| `GET` | `/api/auth/session` | API key | Retrieve the authenticated project/session context |
+
+Authentication middleware is applied according to the route's required credential type.
+
+---
+
+## Health Check
+
+```http
+GET /health
+```
+
+Returns the API health status and process uptime.
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "uptime": 123.45
+}
+```
+
+---
+
+## Projects
+
+Base path:
+
+```text
+/api/projects
+```
+
+Project routes require a user session.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/projects` | List projects available to the authenticated user |
+| `GET` | `/api/projects/:id` | Retrieve a project |
+| `PATCH` | `/api/projects/:id` | Update a project |
+| `DELETE` | `/api/projects/:id` | Delete a project |
+
+---
+
+## API Keys
+
+Base path:
+
+```text
+/api/keys
+```
+
+API-key management is user-scoped. The key-management routes require the authenticated user context.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/keys` | List API keys |
+| `POST` | `/api/keys` | Create an API key |
+| `DELETE` | `/api/keys/:id` | Delete an API key |
+
+### Important authentication distinction
+
+The `/api/keys` router is mounted with:
+
+```text
+app.use("/api/keys", requireUser, keysRouter)
+```
+
+The router itself does **not** need to repeat `requireApiKey` on every route.
+
+This is intentionally different from the API-facing job routes, which are protected by API-key authentication.
+
+There should be only one `/api/keys` router registration in the API application. If two identical `app.use("/api/keys", ...)` registrations exist in the source, the duplicate should be removed rather than documented as two separate API groups.
+
+---
+
+## Queues
+
+Base path:
+
+```text
+/api/queues
+```
+
+Queues are project-scoped resources used to organize and control job execution.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/queues` | List queues |
+| `POST` | `/api/queues` | Create a queue |
+| `PATCH` | `/api/queues/:id` | Update queue configuration |
+
+Queue configuration includes execution-related controls such as priority, concurrency, retry behavior, and pause/resume state where supported by the application.
+
+---
+
+## Dead Letter Queue
+
+Base path:
+
+```text
+/api/dlq
+```
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/dlq` | List dead-lettered jobs |
+| `POST` | `/api/dlq/:jobId/replay` | Replay a dead-lettered job |
+
+The DLQ isolates jobs that have exhausted their configured retry policy. Replay allows an operator to return an eligible failed job to normal processing.
+
+---
+
+## Workflows
+
+Base path:
+
+```text
+/api/workflows
+```
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/workflows` | List workflows/batches |
+| `POST` | `/api/workflows` | Ingest a workflow definition |
+| `GET` | `/api/workflows/:batchId` | Retrieve workflow/batch state |
+
+Workflow ingestion is validated through `IngestWorkflowSchema`.
+
+---
+
+## Recurring Schedules
+
+Base path:
+
+```text
+/api/schedules
+```
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/api/schedules` | Create a recurring schedule |
+| `GET` | `/api/schedules` | List schedules |
+
+Schedule creation is validated through `CreateRecurringScheduleSchema`.
+
+Recurring execution is coordinated at the worker/database layer so multiple worker instances can participate without duplicating the same scheduled execution.
+
+---
+
+# Job API
+
+The application-facing job API is intentionally separated under `/api/v1/jobs`.
+
+Base path:
+
+```text
+/api/v1/jobs
+```
+
+All routes under this mount require API-key authentication.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/jobs` | List jobs |
+| `POST` | `/api/v1/jobs` | Create a job |
+| `POST` | `/api/v1/jobs/batch` | Create a batch of jobs |
+| `GET` | `/api/v1/jobs/:id` | Retrieve a job |
+| `POST` | `/api/v1/jobs/:id/cancel` | Cancel a job |
+
+The API validates job payloads using the appropriate Zod schemas, including `CreateJobSchema` and `CreateBatchJobSchema`.
+
+### Job lifecycle
+
+At a high level, a job follows this lifecycle:
 
 ```text
 Client
-   │
-   ▼
-API Key Authentication
-   │
-   ▼
-Project Scoping
-   │
-   ▼
-Zod Validation
-   │
-   ▼
-REST Controller
-   │
-   ▼
+  │
+  │ POST /api/v1/jobs
+  ▼
+REST API
+  │
+  │ Persist
+  ▼
 PostgreSQL
+  │
+  │ QUEUED
+  ▼
+Worker Claim
+  │
+  │ SELECT ... FOR UPDATE SKIP LOCKED
+  ▼
+RUNNING
+  │
+  ├──────────── Success ────────────► COMPLETED
+  │
+  └──────────── Failure
+                    │
+                    ▼
+                  Retry
+                    │
+             ┌──────┴──────┐
+             │             │
+          Available      Exhausted
+             │             │
+             ▼             ▼
+           QUEUED          DLQ
 ```
 
-### Responsibilities
-
-* API authentication
-* Project/tenant scoping
-* Request validation
-* Job creation
-* Queue management
-* Schedule registration
-* Job querying
-* Project management
-* Returning execution information to clients
-
-Because the API layer is stateless, multiple API instances can run behind a load balancer without requiring sticky sessions.
+This separation allows job producers to submit work without needing to know which worker will execute it.
 
 ---
 
-# 3. PostgreSQL — System of Record
+# Worker API
 
-PostgreSQL is the central persistence and coordination layer.
-
-It stores the state required by both the API and worker clusters.
-
-### Primary Data
+Base path:
 
 ```text
-Projects
-   │
-   ├── API Keys
-   │
-   ├── Queues
-   │      │
-   │      └── Jobs
-   │
-   └── Schedules
+/api/v1/worker
 ```
 
-The database also stores execution metadata such as:
+The worker API is protected by API-key authentication.
 
-* Job status
-* Retry count
-* Priority
-* Scheduled execution time
-* Result
-* Error information
-* Execution timestamps
-* Worker ownership
-* Heartbeat information
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/worker` | Worker-facing API endpoint |
 
-PostgreSQL transactions provide the consistency guarantees required when multiple workers operate on the same queues concurrently.
+The worker layer is responsible for distributed execution while the API layer remains responsible for accepting and managing application requests.
 
 ---
 
-# 4. Distributed Worker Cluster
+# Authentication Model
 
-Workers are responsible for executing background jobs.
+The platform uses two primary authentication contexts.
 
-Multiple worker processes can operate against the same PostgreSQL database.
+## User Authentication
+
+User-facing routes use the authenticated user session.
+
+These routes cover operations such as:
+
+- Registration
+- Login
+- User identity
+- Project management
+- API key management
+
+Session state is represented through the `session` cookie.
+
+## API Key Authentication
+
+Application and service-facing routes use API keys.
+
+API keys are:
+
+- Hashed using SHA-256
+- Scoped to a project
+- Used to authorize project-level resources
+- Suitable for programmatic job submission and worker communication
+
+The distinction is important:
 
 ```text
-                PostgreSQL
-                     │
-          ┌──────────┴──────────┐
-          │                     │
-          ▼                     ▼
-     Worker 01              Worker 02
-          │                     │
-          ▼                     ▼
-       Execute               Execute
-        Jobs                   Jobs
+User Session
+    │
+    ├── Projects
+    └── API Key Management
+
+API Key
+    │
+    └── Project-scoped application access
+          │
+          ├── Jobs
+          ├── Queues
+          ├── Workflows
+          ├── Schedules
+          └── Worker operations
 ```
 
-Workers continuously poll for executable jobs and attempt to claim them atomically.
-
-Adding additional worker processes increases the system's ability to process jobs in parallel.
+The exact middleware applied to each endpoint is documented in [API_REFERENCE.md](./docs/API_REFERENCE.md).
 
 ---
 
-# 5. Concurrent Job Claiming
+# Database Commands
 
-The core concurrency mechanism uses PostgreSQL row-level locking with:
+Database operations are routed through the shared database workspace.
+
+### Generate
+
+```bash
+bun run db:generate
+```
+
+### Migrate
+
+```bash
+bun run db:migrate
+```
+
+### Seed
+
+```bash
+bun run db:seed
+```
+
+Internally, the root scripts use Bun workspace filtering:
+
+```json
+{
+  "db:migrate": "bun --filter @scheduler/database migrate",
+  "db:generate": "bun --filter @scheduler/database generate",
+  "db:seed": "bun --filter @scheduler/database seed"
+}
+```
+
+This keeps database tooling centralized while allowing database commands to be executed from the repository root.
+
+---
+
+# Concurrency & Reliability
+
+One of the core design goals is to achieve safe distributed execution without introducing a separate queue broker.
+
+## Atomic Job Claims
+
+Workers use PostgreSQL row-level locking with:
 
 ```sql
-SELECT *
-FROM jobs
-WHERE status = 'QUEUED'
-  AND run_at <= NOW()
-ORDER BY priority DESC, run_at ASC
+SELECT ...
 FOR UPDATE SKIP LOCKED
-LIMIT 1;
 ```
 
-## Why `SKIP LOCKED`?
+`SKIP LOCKED` allows one worker to skip rows currently being claimed by another worker instead of waiting for those locks. This makes it suitable for high-concurrency queue consumption.
 
-Without `SKIP LOCKED`, multiple workers could attempt to acquire the same row and wait for one another.
-
-With `SKIP LOCKED`:
+Conceptually:
 
 ```text
-              Job Queue
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-    Worker 01           Worker 02
-        │                   │
-     Locks Job A         Skips Job A
-        │                   │
-     Executes            Claims Job B
+                 PostgreSQL
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+        ▼             ▼             ▼
+     Worker 1      Worker 2      Worker 3
+        │             │             │
+     Claim A        Claim B        Claim C
+        │             │             │
+        └─────────────┼─────────────┘
+                      │
+               No duplicate claim
 ```
 
-This allows workers to process different jobs concurrently without blocking each other.
+## Horizontal Worker Scaling
 
-The claim and state transition are performed transactionally.
+Because queue state is stored centrally in PostgreSQL, multiple worker processes can operate against the same queues.
 
-> `SKIP LOCKED` provides atomic job claiming. It does not by itself guarantee exactly-once execution if a worker crashes after claiming a job; job handlers should therefore be designed to tolerate retries and duplicate effects where necessary.
+Adding workers increases available execution capacity while PostgreSQL coordinates ownership of individual jobs.
+
+## Retry Handling
+
+When a job fails, the retry policy determines whether it should be attempted again.
+
+Supported backoff strategies include:
+
+- Fixed Backoff
+- Linear Backoff
+- Exponential Backoff
+- Jitter
+
+A job that exhausts its retry policy is moved to the DLQ.
 
 ---
 
-# 6. Priority-Based Scheduling
+# Workflow Execution
 
-Jobs can have different priority levels.
+Workflows model jobs as dependency graphs rather than independent tasks.
 
-Eligible jobs are ordered by priority before being claimed:
-
-```text
-Priority 20 ──► Execute first
-Priority 10 ──► Execute next
-Priority 5  ──► Execute later
-Priority 0  ──► Execute last
-```
-
-This allows important work to move through the queue ahead of lower-priority jobs.
-
----
-
-# 7. DAG Dependency Resolution
-
-Obsidian Distributed supports workflows where jobs depend on other jobs.
-
-Example:
+A simplified workflow can be represented as:
 
 ```text
         Job A
        /     \
       ▼       ▼
-    Job B   Job C
-       \     /
-        ▼   ▼
+   Job B    Job C
+      \       /
+       ▼     ▼
         Job D
 ```
 
-`Job D` should not execute until its required parent jobs have successfully completed.
+The workflow engine tracks dependencies and makes downstream jobs eligible only when their required predecessors reach the appropriate state.
 
-When a worker completes a job:
+Failure propagation prevents dependent work from executing when its prerequisites cannot successfully complete.
 
-```text
-Job Completed
-      │
-      ▼
-DAG Resolver
-      │
-      ▼
-Find dependent jobs
-      │
-      ▼
-Check remaining dependencies
-      │
-      ▼
-All dependencies complete?
-      │
-     YES
-      │
-      ▼
-Move child to QUEUED
-```
-
-This creates a cascade mechanism where completing one job can automatically unblock downstream jobs.
+For the implementation-level details, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-# 8. Distributed Cron Coordination
+# Observability
 
-Recurring schedules are evaluated by workers.
+The web application provides an operational view of the distributed system.
 
-Because multiple workers may attempt to process the same schedule, PostgreSQL advisory locks provide distributed coordination.
+The dashboard is intended to make the following information visible:
 
-Workers use:
+- Job state
+- Execution history
+- Failed jobs
+- Queues
+- Recurring schedules
+- Worker activity
+- Workflow execution
 
-```sql
-SELECT pg_try_advisory_xact_lock(...);
-```
-
-Only the worker that successfully acquires the lock performs the scheduled operation.
-
-```text
-               Cron Schedule
-                     │
-          ┌──────────┴──────────┐
-          ▼                     ▼
-      Worker 01             Worker 02
-          │                     │
-    Try Advisory Lock     Try Advisory Lock
-          │                     │
-        LOCKED               FAILED
-          │                     │
-          ▼                     ▼
-     Create Job              Skip
-```
-
-This prevents duplicate job creation when multiple workers are running.
+This separates operational visibility from the API and worker processes while keeping the platform within the same monorepo.
 
 ---
 
-# 9. Retry & Backoff
+# Documentation Guide
 
-Failed jobs can be retried according to their configured retry policy.
+The repository documentation is organized by concern.
 
-Supported strategies can include:
+### [Architecture & Concurrency Model](./docs/ARCHITECTURE.md)
 
-* Fixed backoff
-* Linear backoff
-* Exponential backoff
-* Jitter
+Covers:
 
-Example exponential backoff:
+- Distributed worker architecture
+- Job claiming
+- `SKIP LOCKED`
+- PostgreSQL advisory locks
+- DAG execution
+- Retry handling
+- Horizontal scaling
+- Worker coordination
 
-```text
-Attempt 1
-   │
-   └── 1s + jitter
+### [Database Schema](./docs/DATABASE_SCHEMA.md)
 
-Attempt 2
-   │
-   └── 2s + jitter
+Covers:
 
-Attempt 3
-   │
-   └── 4s + jitter
+- Entity relationships
+- Job storage
+- Queue/project relationships
+- Execution history
+- Worker tracking
+- DLQ storage
+- Multi-tenant data model
 
-Attempt 4
-   │
-   └── 8s + jitter
-```
+### [REST API Reference](./docs/API_REFERENCE.md)
 
-Once the maximum retry count has been reached, the job is moved to the Dead Letter Queue.
+Covers:
 
----
+- Authentication
+- Projects
+- API keys
+- Queues
+- Jobs
+- Workflows
+- Schedules
+- DLQ operations
+- Worker endpoints
+- Request/response examples
+- Authentication requirements
 
-# 10. Dead Letter Queue
+### [Design Decisions](./DESIGN_DECISIONS.md)
 
-Jobs that permanently fail after exhausting their retry policy are moved to the **Dead Letter Queue (DLQ)**.
+Covers:
 
-```text
-Job
- │
- ▼
-Failed
- │
- ▼
-Retry
- │
- ▼
-Retry Limit Reached
- │
- ▼
-Dead Letter Queue
-```
-
-DLQ entries retain information useful for debugging and recovery, including:
-
-* Original job information
-* Error message
-* Stack trace
-* Retry count
-* Failure timestamp
-* Queue information
-
-This prevents permanently failing jobs from continuously consuming worker capacity.
+- Architectural rationale
+- PostgreSQL queue design
+- Concurrency decisions
+- Security model
+- Trade-offs
+- Future production evolution
 
 ---
 
-# 11. Worker Heartbeats
+# Tech Stack
 
-Workers periodically report their health.
-
-The heartbeat loop runs every **10 seconds**.
-
-```text
-Worker
-   │
-   ├── Execute jobs
-   │
-   ├── Poll queue
-   │
-   └── Heartbeat ──► PostgreSQL
-                       │
-                       ▼
-                  Worker Health
-```
-
-Heartbeats allow the system to identify workers that have become unavailable and provide operational visibility into the worker cluster.
+| Layer | Technology |
+|---|---|
+| Runtime | Bun / Node.js |
+| Language | TypeScript |
+| API | Express |
+| Database | PostgreSQL / Neon |
+| Validation | Zod |
+| Frontend | React |
+| Server State | TanStack Query |
+| Styling | Tailwind CSS |
+| Package Management | Bun Workspaces |
+| Process Orchestration | concurrently |
 
 ---
 
-# Concurrency Model
+# API Route Summary
 
-The system relies on several layers of concurrency control:
+For quick orientation, the API is divided into the following resource groups:
 
-| Mechanism               | Purpose                                    |
-| ----------------------- | ------------------------------------------ |
-| PostgreSQL Transactions | Atomic state transitions                   |
-| Row-Level Locks         | Protect individual jobs                    |
-| `SKIP LOCKED`           | Allow workers to process jobs concurrently |
-| Advisory Locks          | Coordinate distributed cron execution      |
-| Project Scoping         | Isolate tenant resources                   |
-| Worker Heartbeats       | Track worker availability                  |
-| DAG Dependency Checks   | Prevent premature execution                |
+| Base Path | Primary Purpose | Authentication Context |
+|---|---|---|
+| `/health` | API health check | Public |
+| `/api/auth` | User authentication, projects during onboarding, verification, and session context | User session / API key depending on endpoint |
+| `/api/projects` | Project management | User session |
+| `/api/keys` | API key management | User session |
+| `/api/queues` | Queue management | User/project context |
+| `/api/dlq` | Dead Letter Queue operations | User/project context |
+| `/api/workflows` | Workflow management | User/project context |
+| `/api/schedules` | Recurring schedules | User/project context |
+| `/api/v1/jobs` | Application job API | API key |
+| `/api/v1/worker` | Worker-facing API | API key |
 
-Together, these mechanisms allow multiple API and worker instances to operate against the same database without requiring a centralized in-memory queue.
-
----
-
-# End-to-End Job Flow
-
-A typical job moves through the system as follows:
-
-```text
-┌──────────────┐
-│    Client    │
-└──────┬───────┘
-       │
-       │ POST /api/jobs
-       ▼
-┌──────────────┐
-│     API      │
-│ Auth + Zod   │
-└──────┬───────┘
-       │
-       │ INSERT
-       ▼
-┌──────────────┐
-│  PostgreSQL  │
-│    QUEUED    │
-└──────┬───────┘
-       │
-       │ Claim
-       ▼
-┌──────────────┐
-│    Worker    │
-│   RUNNING    │
-└──────┬───────┘
-       │
-       ├───────────────┐
-       │               │
-       ▼               ▼
-   COMPLETED         FAILED
-       │               │
-       │               ▼
-       │            Retry?
-       │             /   \
-       │           YES    NO
-       │            │      │
-       │            ▼      ▼
-       │          Retry    DLQ
-       │
-       ▼
-┌─────────────────┐
-│ DAG Resolver    │
-│ Unblock Children│
-└─────────────────┘
-```
+The complete endpoint-level reference, including schemas and request/response details, belongs in [API_REFERENCE.md](./docs/API_REFERENCE.md).
 
 ---
 
-# Scaling Model
+# License
 
-Because the API and workers are decoupled, each layer can scale independently.
-
-## Horizontal API Scaling
-
-```text
-             Load Balancer
-             /     |     \
-            ▼      ▼      ▼
-         API 01  API 02  API 03
-            \      |      /
-             \     |     /
-              ▼    ▼    ▼
-              PostgreSQL
-```
-
-## Horizontal Worker Scaling
-
-```text
-                 PostgreSQL
-              /      |      \
-             ▼       ▼       ▼
-        Worker 01 Worker 02 Worker 03
-             │       │       │
-             ▼       ▼       ▼
-           Jobs    Jobs    Jobs
-```
-
-Adding workers increases parallel job-processing capacity while `SKIP LOCKED` prevents workers from competing for the same locked job rows.
-
----
-
-# Development vs Production Architecture
-
-The monorepo's development architecture and the production deployment architecture are intentionally different concerns.
-
-### Development
-
-A single command starts the primary services:
-
-```bash
-bun run dev
-```
-
-```text
-┌───────────────────────┐
-│     Root package      │
-│      bun run dev      │
-└───────────┬───────────┘
-            │
-      concurrently
-            │
-    ┌───────┼───────┐
-    ▼       ▼       ▼
-   API   WORKER    WEB
-```
-
-### Production
-
-The services can be deployed independently:
-
-```text
-                    Load Balancer
-                         │
-                ┌────────┴────────┐
-                ▼                 ▼
-             API 01            API 02
-                │                 │
-                └────────┬────────┘
-                         │
-                         ▼
-                    PostgreSQL
-                         ▲
-                ┌────────┼────────┐
-                │        │        │
-                ▼        ▼        ▼
-            Worker 01 Worker 02 Worker 03
-
-                         ▲
-                         │
-                    React Web
-```
-
-This separation allows API capacity, worker capacity, and frontend hosting to evolve independently.
-
----
-
-# Design Goal
-
-The architecture intentionally centers around **PostgreSQL-backed coordination rather than a separate message broker**.
-
-This provides a simpler operational model while still supporting:
-
-* Multi-tenancy
-* Concurrent job execution
-* Priority queues
-* Retries and backoff
-* Delayed jobs
-* Cron schedules
-* DAG workflows
-* Dead-letter queues
-* Worker health tracking
-* Horizontal worker scaling
-* Horizontally scalable API nodes
-
-The core design principle is:
-
-> **The API decides what should happen. PostgreSQL records what needs to happen. Workers decide when and where it executes.**
+This project is intended for educational and portfolio purposes.
