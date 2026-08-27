@@ -16,6 +16,19 @@ Obsidian Distributed is designed as a production-inspired distributed job schedu
 
 ---
 
+## Dashboard
+![Dashboard](./screenshots/dashboard.png)
+
+## Job Management
+![Jobs](./screenshots/jobs.png)
+
+## Queue Management
+![Queues](./screenshots/queues.png)
+
+## Distributed Workers
+![Workers](./screenshots/workers.png)
+
+
 ## Overview
 
 **Obsidian Distributed** is a distributed task orchestration platform focused on concurrency, resilience, scheduling, workflow execution, and operational visibility.
