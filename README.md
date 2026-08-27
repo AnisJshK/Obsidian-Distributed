@@ -17,16 +17,16 @@ Obsidian Distributed is designed as a production-inspired distributed job schedu
 ---
 
 ## Dashboard
-![Dashboard](./screenshots/dashboard.png)
+![Dashboard](./screenshots/Dashboard.png)
 
 ## Job Management
-![Jobs](./screenshots/jobs.png)
+![Jobs](./screenshots/Jobs.png)
 
 ## Queue Management
-![Queues](./screenshots/queues.png)
+![Queues](./screenshots/Queues.png)
 
 ## Distributed Workers
-![Workers](./screenshots/workers.png)
+![Workers](./screenshots/Workers.png)
 
 
 ## Overview
