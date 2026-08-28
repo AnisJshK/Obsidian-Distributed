@@ -9,8 +9,6 @@ import {
 } from "@scheduler/types";
 import { randomUUID } from "node:crypto";
 
-const FAR_FUTURE_DATE = new Date("9999-12-31T23:59:59.999Z");
-
 function resolvePriority(priority?: PriorityLevel | number): number {
   if (typeof priority === "number") return priority;
   if (priority && priority in PRIORITY_MAP) return PRIORITY_MAP[priority as PriorityLevel];
@@ -63,8 +61,8 @@ export async function ingestWorkflow(
       priority: resolvePriority(node.priority),
       maxRetries: node.maxRetries ?? 3,
       timeoutMs: node.timeoutMs ?? 30000,
-      status: JobStatus.QUEUED,
-      runAt: isRoot ? now : FAR_FUTURE_DATE,
+      status: isRoot ? JobStatus.QUEUED : JobStatus.BLOCKED,
+      runAt: now,
     };
   });
 

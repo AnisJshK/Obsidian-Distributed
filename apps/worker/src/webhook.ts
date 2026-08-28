@@ -27,6 +27,12 @@ export class WebhookDispatcher {
       const isFinished = batch.completedJobs + batch.failedJobs >= batch.totalJobs;
       if (!isFinished) return;
 
+      const claim = await prisma.jobBatch.updateMany({
+        where: { id: batchId, webhookSentAt: null },
+        data: { webhookSentAt: new Date() },
+      });
+      if (claim.count === 0) return;
+
       const payload: BatchWebhookPayload = {
         event: batch.failedJobs > 0 ? "batch.failed" : "batch.completed",
         batchId: batch.id,

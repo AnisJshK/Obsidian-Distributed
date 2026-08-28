@@ -26,11 +26,12 @@ export async function markJobCompleted(
   logs?: string
 ): Promise<void> {
   const now = new Date();
+  let completionUpdated = false;
 
   await prisma.$transaction(
     async (tx) => {
-      await tx.job.update({
-        where: { id: jobId },
+      const { count } = await tx.job.updateMany({
+        where: { id: jobId, claimedById: workerId, status: JobStatus.RUNNING },
         data: {
           status: JobStatus.COMPLETED,
           finishedAt: now,
@@ -38,6 +39,19 @@ export async function markJobCompleted(
           errorDetails: null,
         },
       });
+
+      if (count === 0) {
+        console.warn(
+          `[Lifecycle] Ignoring stale completion for job ${jobId} from worker ${workerId}`
+        );
+        await tx.worker.update({
+          where: { id: workerId },
+          data: { activeJobs: { decrement: 1 } },
+        });
+        return;
+      }
+
+      completionUpdated = true;
 
       await tx.jobExecution.create({
         data: {
@@ -57,6 +71,8 @@ export async function markJobCompleted(
     },
     TX_OPTIONS
   );
+
+  if (!completionUpdated) return;
 
   // Resolve dependent child tasks in the workflow
   await DagDependencyEngine.onJobCompleted(jobId);
@@ -84,6 +100,17 @@ export async function markJobFailed(
 
       if (!job) return;
 
+      if (job.claimedById !== workerId) {
+        console.warn(
+          `[Lifecycle] Ignoring stale failure report for job ${jobId} from worker ${workerId}: job reclaimed by another worker`
+        );
+        await tx.worker.update({
+          where: { id: workerId },
+          data: { activeJobs: { decrement: 1 } },
+        });
+        return;
+      }
+
       const nextRetry = job.retryCount + 1;
       isDLQ = nextRetry > job.maxRetries;
 
@@ -100,8 +127,8 @@ export async function markJobFailed(
       });
 
       if (isDLQ) {
-        await tx.job.update({
-          where: { id: jobId },
+        await tx.job.updateMany({
+          where: { id: jobId, claimedById: workerId },
           data: {
             status: JobStatus.DLQ,
             finishedAt: now,
@@ -129,8 +156,8 @@ export async function markJobFailed(
         );
         const nextRunAt = new Date(Date.now() + delayMs);
 
-        await tx.job.update({
-          where: { id: jobId },
+        await tx.job.updateMany({
+          where: { id: jobId, claimedById: workerId },
           data: {
             status: JobStatus.QUEUED,
             retryCount: nextRetry,

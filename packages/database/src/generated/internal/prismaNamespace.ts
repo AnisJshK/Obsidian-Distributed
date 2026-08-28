@@ -1433,6 +1433,7 @@ export const JobBatchScalarFieldEnum = {
   completedJobs: 'completedJobs',
   failedJobs: 'failedJobs',
   onCompleteUrl: 'onCompleteUrl',
+  webhookSentAt: 'webhookSentAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

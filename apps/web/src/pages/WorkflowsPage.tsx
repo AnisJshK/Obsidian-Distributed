@@ -1,14 +1,19 @@
 // apps/web/src/pages/WorkflowsPage.tsx
 import React, { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api, unwrapApiData, unwrapApiList } from "../lib/api";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { api, getApiErrorMessage, unwrapApiData, unwrapApiList } from "../lib/api";
 import { useProject } from "../context/ProjectContext";
+import { useData } from "../context/DataContext";
 import { 
   GitBranch, 
   RotateCw, 
   CheckCircle2, 
   Clock, 
-  Terminal
+  Terminal,
+  Plus,
+  X,
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 
 interface WorkflowJobNode {
@@ -47,12 +52,42 @@ interface WorkflowBatchSummary {
   failedJobs: number;
 }
 
+interface WorkflowNodeForm {
+  referenceId: string;
+  queueName: string;
+  payloadText: string;
+  priority: number;
+  maxRetries: number;
+  timeoutMs: number;
+  dependsOn: string[];
+}
+
+function createWorkflowNode(referenceId: string, queueName: string): WorkflowNodeForm {
+  return {
+    referenceId,
+    queueName,
+    payloadText: '{\n  "task": "default"\n}',
+    priority: 0,
+    maxRetries: 3,
+    timeoutMs: 30000,
+    dependsOn: [],
+  };
+}
+
 export const WorkflowsPage: React.FC = () => {
   const { activeProject } = useProject();
+  const { queues } = useData();
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<WorkflowJobNode | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [workflowName, setWorkflowName] = useState("");
+  const [onCompleteUrl, setOnCompleteUrl] = useState("");
+  const [nodes, setNodes] = useState<WorkflowNodeForm[]>([createWorkflowNode("node-1", "default")]);
+  const [nextNodeNumber, setNextNodeNumber] = useState(2);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [payloadErrors, setPayloadErrors] = useState<Record<string, string>>({});
 
-  const { data: batches = [] } = useQuery<WorkflowBatchSummary[]>({
+  const { data: batches = [], refetch: refetchBatches } = useQuery<WorkflowBatchSummary[]>({
     queryKey: ["workflow-batches", activeProject?.id],
     enabled: !!activeProject?.id,
     queryFn: async () => {
@@ -77,6 +112,96 @@ export const WorkflowsPage: React.FC = () => {
     refetchInterval: 2500,
   });
 
+  const resetCreateForm = () => {
+    const queueName = queues[0]?.name || "default";
+    setWorkflowName("");
+    setOnCompleteUrl("");
+    setNodes([createWorkflowNode("node-1", queueName)]);
+    setNextNodeNumber(2);
+    setFormError(null);
+    setPayloadErrors({});
+  };
+
+  const createWorkflowMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const response = await api.post("/workflows", body);
+      return response.data as { data?: { batchId?: string } };
+    },
+    onSuccess: (response) => {
+      setShowCreateModal(false);
+      resetCreateForm();
+      setSelectedNode(null);
+      if (response.data?.batchId) setActiveBatchId(response.data.batchId);
+      void refetchBatches();
+      void refetch();
+    },
+  });
+
+  const updateNode = (referenceId: string, changes: Partial<WorkflowNodeForm>) => {
+    setNodes((current) => current.map((node) => (
+      node.referenceId === referenceId ? { ...node, ...changes } : node
+    )));
+  };
+
+  const handleCreateSubmit = () => {
+    if (!workflowName.trim()) {
+      setFormError("Workflow name is required.");
+      return;
+    }
+
+    if (!activeProject?.id) {
+      setFormError("Select a project before creating a workflow.");
+      return;
+    }
+
+    if (!nodes.some((node) => node.dependsOn.length === 0)) {
+      setFormError("A workflow must have at least one root node.");
+      return;
+    }
+
+    const nextPayloadErrors: Record<string, string> = {};
+    const parsedNodes: Array<Record<string, unknown>> = [];
+
+    for (const node of nodes) {
+      if (node.dependsOn.includes(node.referenceId)) {
+        setFormError(`Node ${node.referenceId} cannot depend on itself.`);
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(node.payloadText);
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+          nextPayloadErrors[node.referenceId] = "Payload must be a JSON object.";
+        } else {
+          parsedNodes.push({
+            referenceId: node.referenceId,
+            queueName: node.queueName || "default",
+            payload,
+            priority: node.priority,
+            maxRetries: node.maxRetries,
+            timeoutMs: node.timeoutMs,
+            dependsOn: node.dependsOn,
+          });
+        }
+      } catch {
+        nextPayloadErrors[node.referenceId] = "Payload must be valid JSON.";
+      }
+    }
+
+    setPayloadErrors(nextPayloadErrors);
+    if (Object.keys(nextPayloadErrors).length > 0) return;
+
+    setFormError(null);
+    const body: Record<string, unknown> = {
+      projectId: activeProject.id,
+      workflowName: workflowName.trim(),
+      nodes: parsedNodes,
+    };
+    if (onCompleteUrl.trim()) body.onCompleteUrl = onCompleteUrl.trim();
+
+    createWorkflowMutation.mutate(body);
+  };
+
   const activeJob = selectedNode || batch?.jobs[0] || null;
 
   return (
@@ -89,13 +214,25 @@ export const WorkflowsPage: React.FC = () => {
             Orchestrate multi-step dependent task pipelines with automatic unblocking and cascade handling.
           </p>
         </div>
-        <button
-          onClick={() => { if (activeBatchId) refetch(); }}
-          className="flex items-center gap-2 bg-[#0d1527] border border-[#1a253c] hover:border-slate-600 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-        >
-          <RotateCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin text-blue-400" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { if (activeBatchId) refetch(); }}
+            className="flex items-center gap-2 bg-[#0d1527] border border-[#1a253c] hover:border-slate-600 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin text-blue-400" : ""}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => {
+              resetCreateForm();
+              setShowCreateModal(true);
+            }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition shadow-lg shadow-blue-600/20"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Workflow
+          </button>
+        </div>
       </div>
 
       {/* Recent Pipeline Runs Table */}
@@ -229,6 +366,150 @@ export const WorkflowsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-4xl bg-[#0b1120] border border-[#162033] rounded-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#151e30] pb-3">
+              <div>
+                <h2 className="text-base font-bold text-white font-sans">Create Workflow</h2>
+                <p className="text-xs text-slate-500 mt-1">Define dependent jobs for a new DAG pipeline.</p>
+              </div>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-500 hover:text-slate-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Workflow Name</label>
+                <input
+                  type="text"
+                  value={workflowName}
+                  onChange={(event) => setWorkflowName(event.target.value)}
+                  placeholder="e.g. Daily data pipeline"
+                  className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Completion Webhook URL <span className="text-slate-600">(optional)</span></label>
+                <input
+                  type="url"
+                  value={onCompleteUrl}
+                  onChange={(event) => setOnCompleteUrl(event.target.value)}
+                  placeholder="https://example.com/webhooks/workflow"
+                  className="w-full bg-[#070b14] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Workflow Nodes</span>
+                <button
+                  onClick={() => {
+                    const referenceId = `node-${nextNodeNumber}`;
+                    setNodes((current) => [...current, createWorkflowNode(referenceId, queues[0]?.name || "default")]);
+                    setNextNodeNumber((current) => current + 1);
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Node
+                </button>
+              </div>
+
+              {nodes.map((node, index) => (
+                <div key={node.referenceId} className="bg-[#070b14] border border-[#162033] rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-white">Node {index + 1} <span className="font-mono text-blue-400">{node.referenceId}</span></span>
+                    <button
+                      onClick={() => setNodes((current) => current.filter((item) => item.referenceId !== node.referenceId))}
+                      disabled={nodes.length === 1}
+                      className="text-[11px] text-slate-500 hover:text-red-400 disabled:opacity-40 disabled:hover:text-slate-500"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Queue</label>
+                      <select
+                        value={node.queueName}
+                        onChange={(event) => updateNode(node.referenceId, { queueName: event.target.value })}
+                        className="w-full bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                      >
+                        {queues.length === 0 && <option value="default">default</option>}
+                        {queues.map((queue) => <option key={queue.id} value={queue.name}>{queue.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Priority</label>
+                      <input type="number" value={node.priority} onChange={(event) => updateNode(node.referenceId, { priority: Number(event.target.value) })} className="w-full bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Max Retries</label>
+                      <input type="number" min={0} value={node.maxRetries} onChange={(event) => updateNode(node.referenceId, { maxRetries: Number(event.target.value) })} className="w-full bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Timeout (ms)</label>
+                      <input type="number" min={1} value={node.timeoutMs} onChange={(event) => updateNode(node.referenceId, { timeoutMs: Number(event.target.value) })} className="w-full bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Payload (JSON)</label>
+                      <textarea
+                        value={node.payloadText}
+                        onChange={(event) => updateNode(node.referenceId, { payloadText: event.target.value })}
+                        rows={4}
+                        spellCheck={false}
+                        className="w-full bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500"
+                      />
+                      {payloadErrors[node.referenceId] && <p className="mt-1 text-[11px] text-red-400">{payloadErrors[node.referenceId]}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Depends On</label>
+                      <select
+                        multiple
+                        value={node.dependsOn}
+                        onChange={(event) => updateNode(node.referenceId, { dependsOn: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}
+                        className="w-full h-[104px] bg-[#0b1120] border border-[#162033] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                      >
+                        {nodes.filter((item) => item.referenceId !== node.referenceId).map((item) => (
+                          <option key={item.referenceId} value={item.referenceId}>{item.referenceId}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[10px] text-slate-600">Hold Ctrl/Cmd to select multiple dependencies.</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {(formError || createWorkflowMutation.isError) && (
+              <p className="text-[11px] text-red-400 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {formError || getApiErrorMessage(createWorkflowMutation.error)}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#151e30]">
+              <button onClick={() => setShowCreateModal(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancel</button>
+              <button
+                onClick={handleCreateSubmit}
+                disabled={createWorkflowMutation.isPending}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition"
+              >
+                {createWorkflowMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Create Workflow
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -31,20 +31,21 @@ export class DeadWorkerReaper {
       select: { id: true },
     });
 
-    if (deadWorkers.length === 0) return;
     const deadWorkerIds = deadWorkers.map((w) => w.id);
 
-    console.warn(`[Reaper] Flagged dead workers: ${deadWorkerIds.join(", ")}`);
+    if (deadWorkerIds.length > 0) {
+      console.warn(`[Reaper] Flagged dead workers: ${deadWorkerIds.join(", ")}`);
 
-    await prisma.worker.updateMany({
-      where: { id: { in: deadWorkerIds } },
-      data: { status: WorkerStatus.STALLED },
-    });
+      await prisma.worker.updateMany({
+        where: { id: { in: deadWorkerIds } },
+        data: { status: WorkerStatus.STALLED },
+      });
+    }
 
     const orphanedJobs = await prisma.job.findMany({
       where: {
-        claimedById: { in: deadWorkerIds },
         status: { in: [JobStatus.CLAIMED, JobStatus.RUNNING] },
+        updatedAt: { lt: cutoff },
       },
     });
 

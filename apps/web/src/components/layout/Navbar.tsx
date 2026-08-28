@@ -30,7 +30,7 @@ export const Navbar: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProjectPopover, setShowProjectPopover] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [workerSnippetTab, setWorkerSnippetTab] = useState<"bun" | "docker" | "node">("bun");
+  const [workerSnippetTab, setWorkerSnippetTab] = useState<"bun" | "powershell" |"docker" | "node">("powershell");
 
   const notifRef = useRef<HTMLDivElement>(null);
   const projectRef = useRef<HTMLDivElement>(null);
@@ -68,6 +68,8 @@ export const Navbar: React.FC = () => {
     switch (workerSnippetTab) {
       case "bun":
         return `cd apps/worker\nPROJECT_ID="${projectId}" bun run dev`;
+      case "powershell":
+        return `cd apps/worker\n$env:PROJECT_ID="${projectId}"\nbun run dev`;
       case "docker":
         return `docker run -e PROJECT_ID="${projectId}" -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/scheduler" obsidian-worker:latest`;
       case "node":
@@ -253,7 +255,7 @@ export const Navbar: React.FC = () => {
 
             {/* Runtime Tabs */}
             <div className="flex bg-[#070b14] p-1 rounded-lg border border-[#151e30] text-xs">
-              {(["bun", "docker", "node"] as const).map((tab) => (
+              {(["bun", "powershell","docker", "node"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setWorkerSnippetTab(tab)}

@@ -89,6 +89,16 @@ jobsRouter.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest
     }
 
     const job = await prisma.$transaction(async (tx) => {
+      const parentsCompleted =
+        !parentJobIds ||
+        parentJobIds.length === 0 ||
+        (await tx.job.count({
+          where: {
+            id: { in: parentJobIds },
+            status: JobStatus.COMPLETED,
+          },
+        })) === parentJobIds.length;
+
       const created = await tx.job.create({
         data: {
           queueId: queue.id,
@@ -99,7 +109,7 @@ jobsRouter.post("/", validate(CreateJobSchema), async (req: AuthenticatedRequest
           maxRetries,
           backoffType,
           backoffDelayMs,
-          status: JobStatus.QUEUED,
+          status: parentsCompleted ? JobStatus.QUEUED : JobStatus.BLOCKED,
         },
         include: {
           queue: { select: { id: true, name: true } },

@@ -10,8 +10,11 @@ async function executeTaskPayload(
     throw new Error("Job execution aborted due to timeout");
   }
 
+  const taskPromise = runTask(payload);
+  taskPromise.catch(() => {});
+
   return Promise.race([
-    runTask(payload),
+    taskPromise,
     new Promise<never>((_, reject) => {
       signal.addEventListener("abort", () => reject(new Error("Job execution aborted due to timeout")));
     }),

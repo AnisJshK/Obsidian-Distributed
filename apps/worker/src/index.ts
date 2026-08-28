@@ -1,6 +1,6 @@
 import "dotenv/config";
 import os from "node:os";
-import { prisma, WorkerStatus } from "@scheduler/database";
+import { prisma, JobStatus, WorkerStatus } from "@scheduler/database";
 import { claimNextJobs } from "./poller";
 import { executeJob } from "./executor";
 import { HeartbeatManager } from "./heartbeat";
@@ -54,6 +54,19 @@ async function bootstrap() {
     while (activeJobCount > 0 && Date.now() - drainStart < 15000) {
       await new Promise((r) => setTimeout(r, 200));
     }
+
+    await prisma.job.updateMany({
+      where: {
+        claimedById: worker.id,
+        status: { in: [JobStatus.CLAIMED, JobStatus.RUNNING] },
+      },
+      data: {
+        status: JobStatus.QUEUED,
+        claimedById: null,
+        runAt: new Date(),
+        errorDetails: "Requeued: worker force-terminated during shutdown",
+      },
+    });
 
     await prisma.worker.update({
       where: { id: worker.id },

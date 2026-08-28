@@ -52,9 +52,10 @@ export class DagDependencyEngine {
         const updated = await prisma.job.updateMany({
           where: {
             id: childId,
-            status: JobStatus.QUEUED,
+            status: JobStatus.BLOCKED,
           },
           data: {
+            status: JobStatus.QUEUED,
             runAt: new Date(),
             updatedAt: new Date(),
           },
@@ -112,7 +113,7 @@ export class DagDependencyEngine {
       const updated = await prisma.job.updateMany({
         where: {
           id: { in: ids },
-          status: JobStatus.QUEUED,
+          status: { in: [JobStatus.QUEUED, JobStatus.BLOCKED] },
         },
         data: {
           status: JobStatus.DLQ,

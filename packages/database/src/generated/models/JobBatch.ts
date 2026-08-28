@@ -46,6 +46,7 @@ export type JobBatchMinAggregateOutputType = {
   completedJobs: number | null
   failedJobs: number | null
   onCompleteUrl: string | null
+  webhookSentAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -58,6 +59,7 @@ export type JobBatchMaxAggregateOutputType = {
   completedJobs: number | null
   failedJobs: number | null
   onCompleteUrl: string | null
+  webhookSentAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -70,6 +72,7 @@ export type JobBatchCountAggregateOutputType = {
   completedJobs: number
   failedJobs: number
   onCompleteUrl: number
+  webhookSentAt: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -96,6 +99,7 @@ export type JobBatchMinAggregateInputType = {
   completedJobs?: true
   failedJobs?: true
   onCompleteUrl?: true
+  webhookSentAt?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -108,6 +112,7 @@ export type JobBatchMaxAggregateInputType = {
   completedJobs?: true
   failedJobs?: true
   onCompleteUrl?: true
+  webhookSentAt?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -120,6 +125,7 @@ export type JobBatchCountAggregateInputType = {
   completedJobs?: true
   failedJobs?: true
   onCompleteUrl?: true
+  webhookSentAt?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -219,6 +225,7 @@ export type JobBatchGroupByOutputType = {
   completedJobs: number
   failedJobs: number
   onCompleteUrl: string | null
+  webhookSentAt: Date | null
   createdAt: Date
   updatedAt: Date
   _count: JobBatchCountAggregateOutputType | null
@@ -254,6 +261,7 @@ export type JobBatchWhereInput = {
   completedJobs?: Prisma.IntFilter<"JobBatch"> | number
   failedJobs?: Prisma.IntFilter<"JobBatch"> | number
   onCompleteUrl?: Prisma.StringNullableFilter<"JobBatch"> | string | null
+  webhookSentAt?: Prisma.DateTimeNullableFilter<"JobBatch"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
   project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
@@ -268,6 +276,7 @@ export type JobBatchOrderByWithRelationInput = {
   completedJobs?: Prisma.SortOrder
   failedJobs?: Prisma.SortOrder
   onCompleteUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  webhookSentAt?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   project?: Prisma.ProjectOrderByWithRelationInput
@@ -285,6 +294,7 @@ export type JobBatchWhereUniqueInput = Prisma.AtLeast<{
   completedJobs?: Prisma.IntFilter<"JobBatch"> | number
   failedJobs?: Prisma.IntFilter<"JobBatch"> | number
   onCompleteUrl?: Prisma.StringNullableFilter<"JobBatch"> | string | null
+  webhookSentAt?: Prisma.DateTimeNullableFilter<"JobBatch"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
   project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
@@ -299,6 +309,7 @@ export type JobBatchOrderByWithAggregationInput = {
   completedJobs?: Prisma.SortOrder
   failedJobs?: Prisma.SortOrder
   onCompleteUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  webhookSentAt?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.JobBatchCountOrderByAggregateInput
@@ -319,6 +330,7 @@ export type JobBatchScalarWhereWithAggregatesInput = {
   completedJobs?: Prisma.IntWithAggregatesFilter<"JobBatch"> | number
   failedJobs?: Prisma.IntWithAggregatesFilter<"JobBatch"> | number
   onCompleteUrl?: Prisma.StringNullableWithAggregatesFilter<"JobBatch"> | string | null
+  webhookSentAt?: Prisma.DateTimeNullableWithAggregatesFilter<"JobBatch"> | Date | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"JobBatch"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"JobBatch"> | Date | string
 }
@@ -330,6 +342,7 @@ export type JobBatchCreateInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   project: Prisma.ProjectCreateNestedOneWithoutBatchesInput
@@ -344,6 +357,7 @@ export type JobBatchUncheckedCreateInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   jobs?: Prisma.JobUncheckedCreateNestedManyWithoutBatchInput
@@ -356,6 +370,7 @@ export type JobBatchUpdateInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   project?: Prisma.ProjectUpdateOneRequiredWithoutBatchesNestedInput
@@ -370,6 +385,7 @@ export type JobBatchUncheckedUpdateInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   jobs?: Prisma.JobUncheckedUpdateManyWithoutBatchNestedInput
@@ -383,6 +399,7 @@ export type JobBatchCreateManyInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -394,6 +411,7 @@ export type JobBatchUpdateManyMutationInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -406,6 +424,7 @@ export type JobBatchUncheckedUpdateManyInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -428,6 +447,7 @@ export type JobBatchCountOrderByAggregateInput = {
   completedJobs?: Prisma.SortOrder
   failedJobs?: Prisma.SortOrder
   onCompleteUrl?: Prisma.SortOrder
+  webhookSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -446,6 +466,7 @@ export type JobBatchMaxOrderByAggregateInput = {
   completedJobs?: Prisma.SortOrder
   failedJobs?: Prisma.SortOrder
   onCompleteUrl?: Prisma.SortOrder
+  webhookSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -458,6 +479,7 @@ export type JobBatchMinOrderByAggregateInput = {
   completedJobs?: Prisma.SortOrder
   failedJobs?: Prisma.SortOrder
   onCompleteUrl?: Prisma.SortOrder
+  webhookSentAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -538,6 +560,7 @@ export type JobBatchCreateWithoutProjectInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   jobs?: Prisma.JobCreateNestedManyWithoutBatchInput
@@ -550,6 +573,7 @@ export type JobBatchUncheckedCreateWithoutProjectInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   jobs?: Prisma.JobUncheckedCreateNestedManyWithoutBatchInput
@@ -592,6 +616,7 @@ export type JobBatchScalarWhereInput = {
   completedJobs?: Prisma.IntFilter<"JobBatch"> | number
   failedJobs?: Prisma.IntFilter<"JobBatch"> | number
   onCompleteUrl?: Prisma.StringNullableFilter<"JobBatch"> | string | null
+  webhookSentAt?: Prisma.DateTimeNullableFilter<"JobBatch"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"JobBatch"> | Date | string
 }
@@ -603,6 +628,7 @@ export type JobBatchCreateWithoutJobsInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   project: Prisma.ProjectCreateNestedOneWithoutBatchesInput
@@ -616,6 +642,7 @@ export type JobBatchUncheckedCreateWithoutJobsInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -643,6 +670,7 @@ export type JobBatchUpdateWithoutJobsInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   project?: Prisma.ProjectUpdateOneRequiredWithoutBatchesNestedInput
@@ -656,6 +684,7 @@ export type JobBatchUncheckedUpdateWithoutJobsInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -667,6 +696,7 @@ export type JobBatchCreateManyProjectInput = {
   completedJobs?: number
   failedJobs?: number
   onCompleteUrl?: string | null
+  webhookSentAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -678,6 +708,7 @@ export type JobBatchUpdateWithoutProjectInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   jobs?: Prisma.JobUpdateManyWithoutBatchNestedInput
@@ -690,6 +721,7 @@ export type JobBatchUncheckedUpdateWithoutProjectInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   jobs?: Prisma.JobUncheckedUpdateManyWithoutBatchNestedInput
@@ -702,6 +734,7 @@ export type JobBatchUncheckedUpdateManyWithoutProjectInput = {
   completedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   failedJobs?: Prisma.IntFieldUpdateOperationsInput | number
   onCompleteUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  webhookSentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -745,6 +778,7 @@ export type JobBatchSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   completedJobs?: boolean
   failedJobs?: boolean
   onCompleteUrl?: boolean
+  webhookSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
@@ -760,6 +794,7 @@ export type JobBatchSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exte
   completedJobs?: boolean
   failedJobs?: boolean
   onCompleteUrl?: boolean
+  webhookSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
@@ -773,6 +808,7 @@ export type JobBatchSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exte
   completedJobs?: boolean
   failedJobs?: boolean
   onCompleteUrl?: boolean
+  webhookSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
@@ -786,11 +822,12 @@ export type JobBatchSelectScalar = {
   completedJobs?: boolean
   failedJobs?: boolean
   onCompleteUrl?: boolean
+  webhookSentAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type JobBatchOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "projectId" | "name" | "totalJobs" | "completedJobs" | "failedJobs" | "onCompleteUrl" | "createdAt" | "updatedAt", ExtArgs["result"]["jobBatch"]>
+export type JobBatchOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "projectId" | "name" | "totalJobs" | "completedJobs" | "failedJobs" | "onCompleteUrl" | "webhookSentAt" | "createdAt" | "updatedAt", ExtArgs["result"]["jobBatch"]>
 export type JobBatchInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
   jobs?: boolean | Prisma.JobBatch$jobsArgs<ExtArgs>
@@ -817,6 +854,7 @@ export type $JobBatchPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
     completedJobs: number
     failedJobs: number
     onCompleteUrl: string | null
+    webhookSentAt: Date | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["jobBatch"]>
@@ -1251,6 +1289,7 @@ export interface JobBatchFieldRefs {
   readonly completedJobs: Prisma.FieldRef<"JobBatch", 'Int'>
   readonly failedJobs: Prisma.FieldRef<"JobBatch", 'Int'>
   readonly onCompleteUrl: Prisma.FieldRef<"JobBatch", 'String'>
+  readonly webhookSentAt: Prisma.FieldRef<"JobBatch", 'DateTime'>
   readonly createdAt: Prisma.FieldRef<"JobBatch", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"JobBatch", 'DateTime'>
 }

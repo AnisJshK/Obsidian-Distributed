@@ -20,6 +20,7 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole]
 
 export const JobStatus = {
   QUEUED: 'QUEUED',
+  BLOCKED: 'BLOCKED',
   CLAIMED: 'CLAIMED',
   RUNNING: 'RUNNING',
   COMPLETED: 'COMPLETED',

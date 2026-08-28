@@ -19,6 +19,7 @@ enum UserRole {
 
 enum JobStatus {
   QUEUED
+  BLOCKED
   CLAIMED
   RUNNING
   COMPLETED
@@ -147,6 +148,7 @@ model JobBatch {
   completedJobs Int       @default(0)
   failedJobs    Int       @default(0)
   onCompleteUrl String?   // Webhook to fire when all jobs in batch complete
+  webhookSentAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   jobs          Job[]
