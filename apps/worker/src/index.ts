@@ -7,6 +7,14 @@ import { HeartbeatManager } from "./heartbeat";
 import { DeadWorkerReaper } from "./reaper";
 import { RecurringScheduleEvaluator } from "./cron";
 
+Bun.serve({
+  port: Number(process.env.PORT) || 3001,
+  fetch() {
+    return new Response("worker alive");
+  },
+});
+console.log("🌐 Health server listening on port", process.env.PORT || 3001);
+
 const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || "5", 10);
 const POLL_INTERVAL_MS = 1000;
 
