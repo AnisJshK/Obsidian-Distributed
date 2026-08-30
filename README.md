@@ -6,6 +6,16 @@ Obsidian Distributed is designed as a production-inspired distributed job schedu
 
 ---
 
+## Live Demo
+
+- **Frontend**: https://obsidian-distributed-web.vercel.app
+- **API**: https://obsidian-distributed-1.onrender.com
+- **API Health**: https://obsidian-distributed-1.onrender.com/health
+
+> Note: Backend services run on Render's free tier and may take 10–50 seconds
+> to respond on first load if idle, though they're kept warm via a scheduled
+> health-check ping.
+
 ## Documentation
 
 - [Architecture & Concurrency Model](./docs/ARCHITECTURE.md)
