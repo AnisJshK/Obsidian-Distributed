@@ -47,10 +47,16 @@ const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
 });
+const isProd = process.env.NODE_ENV === "production";
 
 function issueSession(res: Response, userId: string) {
   const token = jwt.sign({ sub: userId }, process.env.JWT_SECRET!, { expiresIn: "7d" });
-  res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 7 * 86400000 });
+  res.cookie("session", token, {
+    httpOnly: true,
+    sameSite: isProd ? "none" : "lax",
+    secure: isProd,
+    maxAge: 7 * 86400000,
+  });
 }
 
 authRouter.post("/register", validate(RegisterUserSchema), async (req, res, next) => {
@@ -201,7 +207,8 @@ authRouter.post(
 // apps/api/src/routes/auth.routes.ts
 
 authRouter.post("/logout", (_req: Request, res: Response) => {
-  res.clearCookie("session", { httpOnly: true, sameSite: "lax" });
+   const isProd = process.env.NODE_ENV === "production";
+  res.clearCookie("session", { httpOnly: true, sameSite: isProd ? "none" : "lax", secure: isProd });
   res.json({ success: true, message: "Logged out." });
 });
 
